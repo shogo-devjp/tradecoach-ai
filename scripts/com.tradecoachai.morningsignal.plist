@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradecoachai.morningsignal</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>/Users/okashogo/Desktop/tradecoach-ai/scripts/run-morning-signal.sh</string>
+    </array>
+
+    <!-- 毎朝8:30（Macのシステム時刻＝日本時間想定）に実行 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <!-- ログイン直後には実行しない。あくまで8:30のみ -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- launchd自体がスクリプトを起動できなかった場合（実行権限がない等）の低レベルなログ -->
+    <key>StandardOutPath</key>
+    <string>/Users/okashogo/Desktop/tradecoach-ai/logs/launchd-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/okashogo/Desktop/tradecoach-ai/logs/launchd-stderr.log</string>
+</dict>
+</plist>
