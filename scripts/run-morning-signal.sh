@@ -21,6 +21,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# 日本株市場（JPX）が休場日（土日・年末年始・祝日）なら、スクリーニング・LINE通知・APIへの
+# アクセス自体を一切行わずに終了する（check-market-open.jsの終了コードで判定）。
+if ! node "$PROJECT_DIR/scripts/check-market-open.mjs" 2>>"$LOG_FILE"; then
+  echo "[$(timestamp)] Market closed. Skip morning signal." >> "$LOG_FILE"
+  exit 0
+fi
+
 http_code=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" --max-time 120 -X POST "$API_URL")
 curl_exit=$?
 

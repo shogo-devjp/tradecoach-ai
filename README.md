@@ -83,8 +83,13 @@ NOTIFIER_CHANNEL=line
 
 ### 構成ファイル
 
-- `scripts/run-morning-signal.sh` — 実行本体。`POST /api/v1/screening/signals`を叩き、結果を`logs/morning-signal.log`に記録する
+- `scripts/run-morning-signal.sh` — 実行本体。休場日でなければ`POST /api/v1/screening/signals`を叩き、結果を`logs/morning-signal.log`に記録する
+- `scripts/check-market-open.mjs` — 日本株市場（JPX）が本日営業日かどうかを判定する（土日・年末年始・日本の祝日を休場とする。`@holiday-jp/holiday_jp`を使用）
 - `scripts/com.tradecoachai.morningsignal.plist` — LaunchAgentの定義（リポジトリ内はテンプレート）。実際に登録されているのは`~/Library/LaunchAgents/com.tradecoachai.morningsignal.plist`
+
+### 休場日の扱い
+
+土曜・日曜・日本の祝日・JPXの年末年始休場（12/31〜1/3）は、スクリーニング・LINE通知・APIへのアクセスを一切行わずに終了します。`logs/morning-signal.log`には`Market closed. Skip morning signal.`と記録されます。
 
 ### 前提条件・注意点
 
