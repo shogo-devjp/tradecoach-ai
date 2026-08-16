@@ -187,6 +187,21 @@ export function runTechnicalAnalysis(series: OHLCVSeries, context: AnalysisConte
   const strategy = buildTodayStrategy(signal, trend, risk.level, rsi[last]!);
   const coachComment = generateCoachComment(signal, trend, risk.level, rsi[last]!, sentiment);
 
+  // verificationログ完全化（Version 1.2）：既に計算済みの生値をそのまま外に出すだけで、
+  // スコア計算・シグナル判定には一切使わない（表示・記録専用の値）。
+  const indicatorValues = {
+    rsi: rsi[last]!,
+    macdLine: macd.macdLine[last]!,
+    macdSignal: macd.signalLine[last]!,
+    macdHistogram: macd.macdLine[last]! - macd.signalLine[last]!,
+    sma5: sma5[last]!,
+    sma25: sma25[last]!,
+    sma75: sma75[last]!,
+    ma5DiffPercent: ((currentPrice - sma5[last]!) / sma5[last]!) * 100,
+    ma25DiffPercent: ((currentPrice - sma25[last]!) / sma25[last]!) * 100,
+    ma75DiffPercent: ((currentPrice - sma75[last]!) / sma75[last]!) * 100,
+  };
+
   return {
     score,
     signal,
@@ -212,6 +227,9 @@ export function runTechnicalAnalysis(series: OHLCVSeries, context: AnalysisConte
     entryTimingScore,
     todayAction,
     todayActionReason,
+    indicatorValues,
+    trend60m,
+    trend15m,
     indicators,
   };
 }
@@ -264,6 +282,20 @@ function buildInsufficientDataResult(currentPrice: number, marketRegime: MarketR
     entryTimingScore: 3,
     todayAction: "見送り",
     todayActionReason: "過去データが不足しているため本日は判定できません。無理をせず見送りましょう。",
+    indicatorValues: {
+      rsi: 50,
+      macdLine: 0,
+      macdSignal: 0,
+      macdHistogram: 0,
+      sma5: currentPrice,
+      sma25: currentPrice,
+      sma75: currentPrice,
+      ma5DiffPercent: 0,
+      ma25DiffPercent: 0,
+      ma75DiffPercent: 0,
+    },
+    trend60m: null,
+    trend15m: null,
     indicators: {
       movingAverage5: insufficient,
       movingAverage25: insufficient,

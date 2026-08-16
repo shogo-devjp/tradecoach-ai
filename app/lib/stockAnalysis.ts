@@ -5,6 +5,7 @@ import { getMarketRegime } from "@/app/lib/marketRegime/marketRegime";
 import { recordJudgment } from "@/app/lib/verification/store";
 import { resolveCompanyName } from "@/app/lib/companyNames/master";
 import { pickBeginnerAdvice } from "@/app/lib/technicalAnalysis/checkpoints";
+import { calcDaysFromEarnings, getEarningsInfo, isEarningsRisk } from "@/app/lib/earnings/earningsCalendar";
 
 const yahooFinance = new YahooFinance();
 
@@ -32,7 +33,7 @@ export async function analyzeStockByCode(code: string, options: AnalyzeOptions =
 
   // 60分足・15分足の取得はマルチタイムフレーム分析の補助情報であり必須ではないため、
   // 失敗しても分析全体を失敗させず null にフォールバックする（quote/chart/marketRegimeは必須のまま）。
-  const [quote, chart, marketRegime, chart60m, chart15m] = await Promise.all([
+  const [quote, chart, marketRegime, chart60m, chart15m, earnings] = await Promise.all([
     yahooFinance.quote(symbol),
     yahooFinance.chart(symbol, { period1, interval: "1d" }),
     getMarketRegime(),
@@ -42,6 +43,9 @@ export async function analyzeStockByCode(code: string, options: AnalyzeOptions =
     includeIntraday
       ? yahooFinance.chart(symbol, { period1: intradayPeriod1, interval: "15m" }).catch(() => null)
       : null,
+    // 決算発表日はVersion 1.2でverificationログへの記録・UI警告表示のみに使う
+    // （AIスコア・シグナル・EntryBlockの判定条件にはまだ使わない）。取得失敗時はnullフォールバック。
+    getEarningsInfo(code).catch(() => ({ earningsDate: null, isEstimate: false })),
   ]);
 
   const series = buildOHLCVSeries(chart);
@@ -51,6 +55,12 @@ export async function analyzeStockByCode(code: string, options: AnalyzeOptions =
       : null;
 
   const analysis = runTechnicalAnalysis(series, { marketRegime, intraday });
+
+  // Version 1.2: 決算発表日と判定日の関係を後から再計算できる生データとして保存する
+  // （「決算前」「決算後」の比較用。daysFromEarningsは負数=決算前、0=決算当日、正数=決算後）。
+  const judgedAt = todayKey();
+  const daysFromEarnings = calcDaysFromEarnings(judgedAt, earnings.earningsDate);
+  const earningsRiskFlag = isEarningsRisk(daysFromEarnings);
 
   const result = {
     symbol: quote.symbol,
@@ -65,11 +75,17 @@ export async function analyzeStockByCode(code: string, options: AnalyzeOptions =
     // 初心者向けアドバイスはcode（銘柄コード）に依存するため、コードを知らない
     // 純粋関数runTechnicalAnalysisの中では計算せず、ここで後付けする。
     beginnerAdvice: pickBeginnerAdvice(code, todayKey(), analysis.todayAction),
+    // 決算リスク（Version 1.2）。UI警告表示専用で、スコア・シグナル・EntryBlockには使わない。
+    earningsDate: earnings.earningsDate,
+    daysFromEarnings,
+    earningsRiskFlag,
+    earningsIsEstimate: earnings.isEstimate,
   };
 
   // 検証モード用の記録。ファイルI/Oの失敗が分析結果の返却を妨げないよう隔離する。
   // AIが外れた理由を後から分析できるよう、地合い・ダウ理論・ATR・出来高倍率・
-  // エントリータイミングも合わせて保存する。
+  // エントリータイミングに加え、Version 1.2ではRSI/MACD/MA・EntryBlock・risk・todayAction・
+  // 地合いの内訳・イントラデイトレンド・決算リスクも合わせて保存する。
   recordJudgment({
     code,
     name: result.name ?? code,
@@ -81,6 +97,19 @@ export async function analyzeStockByCode(code: string, options: AnalyzeOptions =
     atrPercent: result.atrPercent,
     volumeRatio: result.indicators.volume.ratio,
     entryTiming: result.entryTiming,
+    indicatorValues: result.indicatorValues,
+    entryBlockLevel: result.entryBlock.level,
+    entryBlockReason: result.entryBlock.reason,
+    riskLevel: result.risk.level,
+    todayAction: result.todayAction,
+    todayActionReason: result.todayActionReason,
+    marketRegimeDetail: { nikkei225: result.marketRegime.nikkei225, topix: result.marketRegime.topix },
+    trend60m: result.trend60m,
+    trend15m: result.trend15m,
+    earningsDate: earnings.earningsDate,
+    daysFromEarnings,
+    earningsRiskFlag,
+    earningsIsEstimate: earnings.isEstimate,
   }).catch((error) => console.error("[verification] 判定の記録に失敗しました:", error));
 
   return result;

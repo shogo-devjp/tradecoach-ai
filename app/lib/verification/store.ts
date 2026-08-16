@@ -1,6 +1,17 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { EntryTiming, IndicatorStatus, MarketCondition, Signal } from "@/app/lib/technicalAnalysis/types";
+import type {
+  EntryBlockLevel,
+  EntryTiming,
+  IndexCondition,
+  IndicatorRawValues,
+  IndicatorStatus,
+  MarketCondition,
+  RiskLevel,
+  Signal,
+  TodayAction,
+  TrendDirection,
+} from "@/app/lib/technicalAnalysis/types";
 import type { VerificationRecord } from "./types";
 
 // 個人利用・無料運用が前提のため、外部DBは使わずサーバーのローカルJSONファイルに保存する。
@@ -51,6 +62,21 @@ export interface NewJudgment {
   atrPercent: number;
   volumeRatio: number;
   entryTiming: EntryTiming;
+
+  // Version 1.2で追加。すべてoptional（呼び出し元がまだ渡せない場合でも動作するように）。
+  indicatorValues?: IndicatorRawValues;
+  entryBlockLevel?: EntryBlockLevel;
+  entryBlockReason?: string | null;
+  riskLevel?: RiskLevel;
+  todayAction?: TodayAction;
+  todayActionReason?: string;
+  marketRegimeDetail?: { nikkei225: IndexCondition; topix: IndexCondition };
+  trend60m?: TrendDirection | null;
+  trend15m?: TrendDirection | null;
+  earningsDate?: string | null;
+  daysFromEarnings?: number | null;
+  earningsRiskFlag?: boolean;
+  earningsIsEstimate?: boolean;
 }
 
 // 同一銘柄・同日の判定は上書きする（1日に何度分析しても重複記録しない）。
@@ -79,6 +105,19 @@ export async function recordJudgment(judgment: NewJudgment): Promise<void> {
       day3: null,
       day5: null,
       outcome: "pending",
+      indicatorValues: judgment.indicatorValues,
+      entryBlockLevel: judgment.entryBlockLevel,
+      entryBlockReason: judgment.entryBlockReason,
+      riskLevel: judgment.riskLevel,
+      todayAction: judgment.todayAction,
+      todayActionReason: judgment.todayActionReason,
+      marketRegimeDetail: judgment.marketRegimeDetail,
+      trend60m: judgment.trend60m,
+      trend15m: judgment.trend15m,
+      earningsDate: judgment.earningsDate,
+      daysFromEarnings: judgment.daysFromEarnings,
+      earningsRiskFlag: judgment.earningsRiskFlag,
+      earningsIsEstimate: judgment.earningsIsEstimate,
     };
 
     if (existingIndex >= 0) {

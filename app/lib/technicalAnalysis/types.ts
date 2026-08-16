@@ -73,6 +73,22 @@ export interface RiskAssessment {
   reason: string;
 }
 
+// verificationログ完全化（Version 1.2）用。analyze.ts内で既に計算済みだった生値を
+// 外部から参照できるようにするための型。スコア計算式・シグナル判定には使わない（表示・記録専用）。
+export interface IndicatorRawValues {
+  rsi: number;
+  macdLine: number;
+  macdSignal: number;
+  macdHistogram: number;
+  sma5: number;
+  sma25: number;
+  sma75: number;
+  // 現在値が各移動平均線から何%乖離しているか（正=上回っている、負=下回っている）
+  ma5DiffPercent: number;
+  ma25DiffPercent: number;
+  ma75DiffPercent: number;
+}
+
 export interface TodayStrategy {
   action: StrategyAction;
   headline: string;
@@ -104,6 +120,10 @@ export interface AnalysisResult {
   entryTimingScore: number;
   todayAction: TodayAction;
   todayActionReason: string;
+  indicatorValues: IndicatorRawValues;
+  // includeIntraday:false（一括スクリーニング）の場合は常にnull（そもそも未取得のため）。
+  trend60m: TrendDirection | null;
+  trend15m: TrendDirection | null;
   indicators: {
     movingAverage5: IndicatorReason;
     movingAverage25: IndicatorReason;

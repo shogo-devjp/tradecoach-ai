@@ -4,6 +4,11 @@ import type { VerificationRecord } from "./types";
 
 const yahooFinance = new YahooFinance();
 
+// scanUniverse.tsと同じ考え方でYahoo Financeへの同時リクエスト数を絞る。
+// Version 1.1までは1件ずつ逐次処理していたため、未決済レコードが増えるほど
+// 決済処理全体の所要時間が線形に伸び続ける問題があった（並列化のみでロジックは変えない）。
+const SETTLE_CONCURRENCY = 8;
+
 function computeChangePercent(base: number, current: number): number {
   return Math.round(((current - base) / base) * 1000) / 10;
 }
@@ -20,59 +25,76 @@ async function fetchFutureCloses(code: string, judgedAt: string): Promise<{ date
     .filter((q) => q.date > judgedAt); // 判定日当日は含めず、翌営業日以降のみを対象にする
 }
 
+// 買い＝上昇で勝ち、売り＝下落で勝ち。方向性のあるシグナルのみ勝敗をつけられる。
+function resolveDirectionalOutcome(signal: "買い" | "売り", day5ChangePercent: number): "win" | "loss" {
+  return signal === "買い"
+    ? day5ChangePercent > 0
+      ? "win"
+      : "loss"
+    : day5ChangePercent < 0
+      ? "win"
+      : "loss";
+}
+
+// Version 1.2: 「待ち」（およびentryTiming/todayActionが本日は休みましょう・見送り・
+// 押し目待ち・ブレイク待ち・様子見の買い/売り）も、方向性のある勝敗こそつけられないが
+// day1/day3/day5の価格は買い/売りと同じロジックで追跡する。これにより
+// 「エントリーしなかった判断が結果的にどうだったか」を後から検証できるようにする。
+// Version 1.1以前は「待ち」を即座にoutcome="neutral"へ確定し価格を一切追跡していなかったため、
+// 挙動が変わる点に注意（互換性への影響はtypes.tsのコメント・報告を参照）。
+async function settleOne(record: VerificationRecord): Promise<boolean> {
+  if (record.outcome !== "pending") return false;
+
+  try {
+    const futureCloses = await fetchFutureCloses(record.code, record.judgedAt);
+    if (futureCloses.length === 0) return false;
+
+    let changed = false;
+
+    if (!record.day1 && futureCloses[0]) {
+      record.day1 = {
+        date: futureCloses[0].date,
+        changePercent: computeChangePercent(record.priceAtJudgment, futureCloses[0].close),
+      };
+      changed = true;
+    }
+    if (!record.day3 && futureCloses[2]) {
+      record.day3 = {
+        date: futureCloses[2].date,
+        changePercent: computeChangePercent(record.priceAtJudgment, futureCloses[2].close),
+      };
+      changed = true;
+    }
+    if (!record.day5 && futureCloses[4]) {
+      record.day5 = {
+        date: futureCloses[4].date,
+        changePercent: computeChangePercent(record.priceAtJudgment, futureCloses[4].close),
+      };
+      record.outcome =
+        record.signal === "買い" || record.signal === "売り"
+          ? resolveDirectionalOutcome(record.signal, record.day5.changePercent)
+          : "observed";
+      changed = true;
+    }
+
+    return changed;
+  } catch {
+    // 上場廃止・コード変更等で個別銘柄の取得に失敗しても他のレコードの処理は継続する
+    return false;
+  }
+}
+
 // 判定日から翌営業日・3営業日後・5営業日後が経過したレコードについて、
 // Yahoo Financeの日足を再取得し騰落率と勝敗（買い×上昇/売り×下落＝勝ち）を確定する。
-// 「待ち」は方向性のある賭けをしていないため即座にneutral扱いとする。
 export async function settlePendingRecords(): Promise<VerificationRecord[]> {
   const records = await getVerificationLog();
+  const pending = records.filter((r) => r.outcome === "pending");
   let changed = false;
 
-  for (const record of records) {
-    if (record.outcome !== "pending") continue;
-
-    if (record.signal === "待ち") {
-      record.outcome = "neutral";
-      changed = true;
-      continue;
-    }
-
-    try {
-      const futureCloses = await fetchFutureCloses(record.code, record.judgedAt);
-      if (futureCloses.length === 0) continue;
-
-      if (!record.day1 && futureCloses[0]) {
-        record.day1 = {
-          date: futureCloses[0].date,
-          changePercent: computeChangePercent(record.priceAtJudgment, futureCloses[0].close),
-        };
-        changed = true;
-      }
-      if (!record.day3 && futureCloses[2]) {
-        record.day3 = {
-          date: futureCloses[2].date,
-          changePercent: computeChangePercent(record.priceAtJudgment, futureCloses[2].close),
-        };
-        changed = true;
-      }
-      if (!record.day5 && futureCloses[4]) {
-        record.day5 = {
-          date: futureCloses[4].date,
-          changePercent: computeChangePercent(record.priceAtJudgment, futureCloses[4].close),
-        };
-        record.outcome =
-          record.signal === "買い"
-            ? record.day5.changePercent > 0
-              ? "win"
-              : "loss"
-            : record.day5.changePercent < 0
-              ? "win"
-              : "loss";
-        changed = true;
-      }
-    } catch {
-      // 上場廃止・コード変更等で個別銘柄の取得に失敗しても他のレコードの処理は継続する
-      continue;
-    }
+  for (let i = 0; i < pending.length; i += SETTLE_CONCURRENCY) {
+    const chunk = pending.slice(i, i + SETTLE_CONCURRENCY);
+    const results = await Promise.all(chunk.map((record) => settleOne(record)));
+    if (results.some(Boolean)) changed = true;
   }
 
   if (changed) await updateRecords(records);

@@ -58,6 +58,35 @@ export default function VerificationStats({ stats }: { stats: AggregateStats }) 
           <WinRateRow key={bucket.range} label={`${bucket.range}点`} {...bucket} />
         ))}
       </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-800 p-5">
+        <h3 className="mb-2 text-sm font-semibold text-slate-300">待ち・見送りの事後検証</h3>
+        <p className="mb-2 text-xs text-slate-500">
+          エントリーしなかった判断について、実際どれくらい値動きがあったか（勝敗ではなく参考値）
+        </p>
+        <div className="flex items-center justify-between border-b border-slate-700 py-2 text-sm">
+          <span className="text-slate-300">対象件数</span>
+          <span className="tabular-nums text-slate-200">{stats.observed.total}件</span>
+        </div>
+        <div className="flex items-center justify-between border-b border-slate-700 py-2 text-sm">
+          <span className="text-slate-300">翌営業日 平均変動幅</span>
+          <span className="tabular-nums text-slate-200">
+            {stats.observed.avgAbsDay1 === null ? "―" : `${stats.observed.avgAbsDay1}%`}
+          </span>
+        </div>
+        <div className="flex items-center justify-between border-b border-slate-700 py-2 text-sm">
+          <span className="text-slate-300">3営業日後 平均変動幅</span>
+          <span className="tabular-nums text-slate-200">
+            {stats.observed.avgAbsDay3 === null ? "―" : `${stats.observed.avgAbsDay3}%`}
+          </span>
+        </div>
+        <div className="flex items-center justify-between py-2 text-sm">
+          <span className="text-slate-300">5営業日後 平均変動幅</span>
+          <span className="tabular-nums text-slate-200">
+            {stats.observed.avgAbsDay5 === null ? "―" : `${stats.observed.avgAbsDay5}%`}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

@@ -25,6 +25,7 @@ import WatchlistCard from "./components/WatchlistCard";
 import StrategyCard from "./components/StrategyCard";
 import CoachComment from "./components/CoachComment";
 import EntryBlockBanner from "./components/EntryBlockBanner";
+import EarningsWarningBanner from "./components/EarningsWarningBanner";
 import EntryTimingCard from "./components/EntryTimingCard";
 import AICoachComment from "./components/AICoachComment";
 import CheckpointList from "./components/CheckpointList";
@@ -69,6 +70,11 @@ type StockAnalysis = AnalysisResult & {
   low: number;
   open: number;
   beginnerAdvice: string;
+  // 決算リスク（Version 1.2）。UI警告表示専用で、スコア・シグナル・EntryBlockには使わない。
+  earningsDate: string | null;
+  daysFromEarnings: number | null;
+  earningsRiskFlag: boolean;
+  earningsIsEstimate: boolean;
 };
 
 export default function Home() {
@@ -195,6 +201,14 @@ export default function Home() {
 
               {analysis.entryBlock.level === "caution" && (
                 <EntryBlockBanner level={analysis.entryBlock.level} reason={analysis.entryBlock.reason} />
+              )}
+
+              {analysis.earningsRiskFlag && analysis.earningsDate && analysis.daysFromEarnings !== null && (
+                <EarningsWarningBanner
+                  earningsDate={analysis.earningsDate}
+                  daysFromEarnings={analysis.daysFromEarnings}
+                  isEstimate={analysis.earningsIsEstimate}
+                />
               )}
 
               <AICoachComment comment={analysis.todayActionReason} />
