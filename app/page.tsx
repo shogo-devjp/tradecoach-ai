@@ -2,7 +2,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Repeat } from "lucide-react";
 import {
   Activity,
   ChartLine,
@@ -141,7 +141,14 @@ export default function Home() {
       <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-2xl shadow-black/50 ring-1 ring-amber-500/10 sm:p-8">
         <Header />
 
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex flex-wrap justify-end gap-4">
+          <Link
+            href="/fx"
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200"
+          >
+            <Repeat size={14} />
+            FX版（USD/JPY）へ
+          </Link>
           <Link
             href="/verification"
             className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200"
