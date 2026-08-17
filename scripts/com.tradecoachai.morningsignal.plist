@@ -9,7 +9,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>/Users/okashogo/Desktop/tradecoach-ai/scripts/run-morning-signal.sh</string>
+        <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-morning-signal.sh</string>
     </array>
 
     <!-- 毎朝8:30（Macのシステム時刻＝日本時間想定）に実行 -->
@@ -27,8 +27,8 @@
 
     <!-- launchd自体がスクリプトを起動できなかった場合（実行権限がない等）の低レベルなログ -->
     <key>StandardOutPath</key>
-    <string>/Users/okashogo/Desktop/tradecoach-ai/logs/launchd-stdout.log</string>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/okashogo/Desktop/tradecoach-ai/logs/launchd-stderr.log</string>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-stderr.log</string>
 </dict>
 </plist>
