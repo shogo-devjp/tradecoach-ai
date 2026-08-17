@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, LoaderCircle, RefreshCw } from "lucide-react";
 import type { FxAnalysisResult } from "@/app/lib/fx/types";
+import { FX_CONFIG } from "@/app/lib/fx/config";
 import FxDecisionCard from "@/app/components/fx/FxDecisionCard";
 import FxRegimeSessionCard from "@/app/components/fx/FxRegimeSessionCard";
 import FxTimeframeRow from "@/app/components/fx/FxTimeframeRow";
 import FxPriceLevelsCard from "@/app/components/fx/FxPriceLevelsCard";
 import FxAiCoachComment from "@/app/components/fx/FxAiCoachComment";
 import FxReasonsList from "@/app/components/fx/FxReasonsList";
+import FxWaitConditions from "@/app/components/fx/FxWaitConditions";
 
 async function fetchFxAnalysis(): Promise<{ data: FxAnalysisResult | null; error: string | null }> {
   try {
@@ -93,17 +95,28 @@ export default function FxPage() {
 
         {analysis && (
           <div className="space-y-4">
+            {/* 1. 現在の判断 */}
             <FxDecisionCard pair={analysis.pair} price={analysis.price} decision={analysis.decision} score={analysis.score} />
 
-            <FxRegimeSessionCard marketRegime={analysis.marketRegime} session={analysis.session} />
-
-            <FxTimeframeRow directions={analysis.multiTimeframe.directions} />
-
+            {/* 2. なぜその判断なのか（要約コメント → 判定理由 → マルチタイムフレームの説明） */}
             <FxAiCoachComment comment={analysis.aiComment} />
-
             <FxReasonsList reasons={analysis.decision.reasons} />
+            <FxTimeframeRow multiTimeframe={analysis.multiTimeframe} />
 
-            <FxPriceLevelsCard pair={analysis.pair} priceLevels={analysis.priceLevels} riskReward={analysis.riskReward} />
+            {/* 3. 今は何を待つべきか（WAIT時のみ表示） */}
+            <FxWaitConditions waitReasonCodes={analysis.decision.waitReasonCodes} />
+
+            {/* 4. 条件が揃った場合のエントリープラン */}
+            <FxPriceLevelsCard
+              pair={analysis.pair}
+              priceLevels={analysis.priceLevels}
+              riskReward={analysis.riskReward}
+              signal={analysis.decision.signal}
+              minRiskReward={FX_CONFIG.decision.minRiskReward}
+            />
+
+            {/* 5. 相場環境・ADX・ATRなどの詳細情報 */}
+            <FxRegimeSessionCard marketRegime={analysis.marketRegime} session={analysis.session} />
 
             <p className="text-center text-[11px] text-slate-500">
               最終更新: {new Date(analysis.timestamp).toLocaleString("ja-JP")}（データ提供: Yahoo Finance）

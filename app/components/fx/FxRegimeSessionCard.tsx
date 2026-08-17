@@ -34,7 +34,7 @@ function Item({ icon, label, value }: { icon: ReactNode; label: string; value: s
 export default function FxRegimeSessionCard({ marketRegime, session }: FxRegimeSessionCardProps) {
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-800 p-5">
-      <h3 className="mb-3 text-sm font-semibold text-slate-300">相場環境</h3>
+      <h3 className="mb-3 text-sm font-semibold text-slate-300">相場環境（詳細情報）</h3>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Item icon={<Compass size={14} />} label="Market Regime" value={TREND_LABEL[marketRegime.trend]} />
         <Item icon={<Clock size={14} />} label="Session" value={session.label} />
