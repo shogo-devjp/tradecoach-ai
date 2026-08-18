@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradecoachai.webserver</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-webserver.sh</string>
+    </array>
+
+    <!-- Macにログインした時点で本番サーバー(127.0.0.1:3000)を自動起動する。 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- プロセスが終了したら（正常終了・クラッシュ問わず）常に再起動する。
+         next start は本来ずっと動き続けるプロセスのため、終了自体が異常事態とみなす。 -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- クラッシュループ対策。最短でもこの秒数は空けてから再起動する
+         （例: ポート3000が塞がっている等ですぐ失敗する場合でも、高速な再試行の連発を防ぐ）。 -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- launchd自体がスクリプトを起動できなかった場合の低レベルなログ。
+         アプリ本体のログは logs/webserver.log 側に分離している。 -->
+    <key>StandardOutPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-webserver-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-webserver-stderr.log</string>
+</dict>
+</plist>

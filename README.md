@@ -18,6 +18,8 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+> **ポートの運用ルール（Version 1.4〜）**: `127.0.0.1:3000`は本番常駐サーバー（LaunchAgent `com.tradecoachai.webserver`が管理、`next build`＋`next start`）専用です。朝8:30・夕16:30の自動処理も常にこの3000番だけを使います。Claude Codeでの開発・動作確認には**3001番を使ってください**（`npm run dev -- -p 3001`）。3000番で`npm run dev`を起動すると本番サーバーと衝突するため避けてください。詳細は「本番Webサーバーの常駐化」を参照。
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
@@ -77,6 +79,57 @@ NOTIFIER_CHANNEL=line
 - 「ウォッチリスト銘柄のシグナル変化通知」を実際に自動発火させるには、サーバー側のウォッチリスト永続化（現在は各ユーザーのブラウザの`localStorage`のみ）が必要です。
 - 「毎朝8:30配信」はmacOS LaunchAgentで実装済みです（下記「毎朝8:30の自動通知」を参照）。
 
+## 本番Webサーバーの常駐化（LaunchAgent, Version 1.4〜）
+
+Macにログインしている間、本番ビルド（`next build` + `next start`）を`127.0.0.1:3000`で常駐させ、落ちても自動復旧する仕組みです。開発モード（`next dev`）は常駐監視の対象外です（ファイル変更に弱く、常駐サービスには不向きなため）。
+
+### 構成ファイル
+
+- `scripts/run-webserver.sh` — 起動本体。ビルドはせず`next start -H 127.0.0.1 -p 3000`を起動するだけ（ポート使用中・`.next`未生成の場合はエラーをログに残して終了）
+- `scripts/restart-webserver.sh` — コード変更後の安全な再デプロイ用。`npm run build`→成功確認→`launchctl kickstart`で再起動→HTTP 200確認、の順で実行し、**build失敗時は現在稼働中のサーバーに一切触れません**
+- `scripts/com.tradecoachai.webserver.plist` — LaunchAgentの定義（リポジトリ内はテンプレート）。実際に登録されているのは`~/Library/LaunchAgents/com.tradecoachai.webserver.plist`
+
+### ポートの役割分担
+
+| ポート | 用途 | 起動方法 |
+|---|---|---|
+| 3000 | 本番常駐サーバー。朝8:30・夕16:30の自動処理はここだけを見る | LaunchAgent（`com.tradecoachai.webserver`）が自動管理 |
+| 3001 | Claude Codeでの開発・動作確認用 | `npm run dev -- -p 3001` |
+
+### コード変更後の反映方法
+
+Claude Codeでの作業が一段落したら、手動で以下を実行してください（LaunchAgentからは自動で呼ばれません）。
+
+```bash
+bash scripts/restart-webserver.sh
+```
+
+### 停止・再登録
+
+```bash
+# 停止（次回ログイン時にまた自動起動される）
+launchctl unload -w ~/Library/LaunchAgents/com.tradecoachai.webserver.plist
+
+# 設定変更後の再登録
+launchctl unload -w ~/Library/LaunchAgents/com.tradecoachai.webserver.plist
+cp scripts/com.tradecoachai.webserver.plist ~/Library/LaunchAgents/com.tradecoachai.webserver.plist
+launchctl load -w ~/Library/LaunchAgents/com.tradecoachai.webserver.plist
+```
+
+### ログ確認方法
+
+```bash
+# アプリ本体の起動ログ・エラー
+tail -f logs/webserver.log
+
+# launchdレベルの低レベルログ（通常は空でよい）
+cat logs/launchd-webserver-stdout.log
+cat logs/launchd-webserver-stderr.log
+
+# 現在の状態・直近の終了コード
+launchctl list | grep com.tradecoachai.webserver
+```
+
 ## 毎朝8:30の自動通知（LaunchAgent）
 
 日経225スクリーニング（`POST /api/v1/screening/signals`）を毎朝8:30（Macのシステム時刻基準）に自動実行し、買い/売りシグナルをLINEへ通知します。macOSのLaunchAgentという仕組みを使っており、Macにログインしている間、`next dev`（または`next start`）がlocalhost:3000で起動していれば動作します。
@@ -93,8 +146,8 @@ NOTIFIER_CHANNEL=line
 
 ### 前提条件・注意点
 
-- `next dev`または`next start`が起動していない場合、通知は失敗し`logs/morning-signal.log`にERRORが記録されます（アプリ自体の自動起動は今回のスコープ外です）。
-- Macがスリープ中は8:30になっても実行されません（起床後に自動的に追いつく機能はありません）。
+- `127.0.0.1:3000`のサーバーが起動していない場合、通知は失敗し`logs/morning-signal.log`にERRORが記録されます。Version 1.4以降はLaunchAgent `com.tradecoachai.webserver`がサーバー自体の自動起動・自動復旧を担うため、通常は手動起動不要です（詳細は「本番Webサーバーの常駐化」を参照）。
+- Macがスリープ中は8:30になっても実行されません。Version 1.3以降、ログイン・スリープ復帰時に安全な時間帯（08:30〜13:00）内であれば自動的に追いつきます（詳しくは`scripts/run-morning-signal.sh`のコメント参照）。
 - `~/Library/LaunchAgents/`にplistを置いているため、Macを再起動・再ログインしても**自動的に再登録され、追加の操作は不要**です（＝「Mac起動時に自動開始」）。
 
 ### 停止方法
