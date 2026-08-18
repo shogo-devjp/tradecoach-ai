@@ -43,5 +43,13 @@ next-env.d.ts
 # verification mode (個人利用のローカルログ、コミット不要)
 /app/lib/verification/data/
 
-# 毎朝8:30 LaunchAgentの実行ログ（個人利用のローカルログ、コミット不要）
+# 毎朝8:30・毎夕16:30 LaunchAgentの実行ログ（個人利用のローカルログ、コミット不要）
 /logs/*.log
+
+# Version 1.3: 朝/夕処理の「当日実行済みマーカー」（ローカル実行状態、コミット不要）
+/logs/state/
+
+# Version 1.3: 週次検証レポートは個人のローカル検証データのためGit管理しない。
+# ディレクトリの存在だけ reports/weekly/.gitkeep で管理する。
+/reports/weekly/*
+!/reports/weekly/.gitkeep

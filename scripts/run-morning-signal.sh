@@ -4,16 +4,22 @@
 # 4) LINE TOP3通知 の順で実行するスクリプト。
 # 休場日（土日・年末年始・祝日）は1)の時点で全処理をスキップする（Version 1.2でも変更なし）。
 # next dev（またはnext start）がlocalhost:3000で起動している必要がある。
+#
+# Version 1.3で追加: RunAtLoad（Mac起動・スリープ復帰時の自動キャッチアップ）に対応するため、
+# 「当日実行済みか」と「安全な時間帯か」の2つのガードを追加した。
+# 特に、夜にMacを起動した場合に朝のTOP3 LINE通知を遅れて送らないよう、
+# 08:30〜13:00 JSTの範囲外では実行しない（詳細は下のコメント参照）。
 set -u
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/morning-signal.log"
+STATE_DIR="$PROJECT_DIR/logs/state"
 VERIFICATION_API_URL="http://localhost:3000/api/v1/verification"
 SCREENING_API_URL="http://localhost:3000/api/v1/screening/signals"
 RESPONSE_FILE="$(mktemp /tmp/tradecoach-morning-signal-XXXXXX.json)"
 
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" "$STATE_DIR"
 
 timestamp() {
   date "+%Y-%m-%d %H:%M:%S %Z"
@@ -24,10 +30,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
+TODAY_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
+MORNING_MARKER="$STATE_DIR/morning-done-$TODAY_JST"
+CURRENT_HHMM="$(TZ=Asia/Tokyo date +%H%M)"
+
 # 1) 日本株市場（JPX）が休場日（土日・年末年始・祝日）なら、verification決済・スクリーニング・
 #    LINE通知・APIへのアクセス自体を一切行わずに終了する（check-market-open.jsの終了コードで判定）。
 if ! node "$PROJECT_DIR/scripts/check-market-open.mjs" 2>>"$LOG_FILE"; then
   echo "[$(timestamp)] Market closed. Skip morning signal (verification/screening/LINE notify all skipped)." >> "$LOG_FILE"
+  exit 0
+fi
+
+# 1.5) 当日すでに朝処理（TOP3 LINE通知を含む）が成功済みなら、RunAtLoad等による
+#      重複起動でも何もしない（LINE通知の重複防止は既存のnotifiedフラグにも別途あるが、
+#      settle・スクリーニングAPI自体への無駄な再アクセスも避けるため、ここでも止める）。
+if [ -f "$MORNING_MARKER" ]; then
+  echo "[$(timestamp)] Morning signal already completed today. Skip (marker: $MORNING_MARKER)." >> "$LOG_FILE"
+  exit 0
+fi
+
+# 1.6) キャッチアップ安全窓: 08:30〜13:00 JSTの間のみ実行を許可する。
+#      これより後（例: 夜にMacを起動した場合）に、鮮度を失ったTOP3 LINE通知を
+#      遅れて送信してしまう事故を防ぐのが目的。この時間帯外はスキップし、
+#      当日の朝処理は「未実行のまま」にする（マーカーを作らない＝翌日には影響しない）。
+if [ "$CURRENT_HHMM" -lt "0830" ] || [ "$CURRENT_HHMM" -gt "1300" ]; then
+  echo "[$(timestamp)] Outside morning catch-up window (08:30-13:00 JST, now ${CURRENT_HHMM}). Skip to avoid sending a stale TOP3 notification." >> "$LOG_FILE"
   exit 0
 fi
 
@@ -67,6 +94,7 @@ if [ "$http_code" = "200" ]; then
     }
   ' "$RESPONSE_FILE" 2>/dev/null)
   echo "[$(timestamp)] SUCCESS (HTTP $http_code): $summary" >> "$LOG_FILE"
+  touch "$MORNING_MARKER"
   exit 0
 fi
 
