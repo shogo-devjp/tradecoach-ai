@@ -43,6 +43,15 @@ next-env.d.ts
 # verification mode (個人利用のローカルログ、コミット不要)
 /app/lib/verification/data/
 
+# Paper Trading（個人利用のローカルログ、コミット不要。verification/data/と同じ扱い）
+/app/lib/paperTrading/data/
+
+# 225銘柄universeVerification（個人利用のローカルログ、コミット不要。verification/data/と同じ扱い）
+/app/lib/universeVerification/data/
+
+# AI資産運用50万円チャレンジ・YouTube記録基盤（個人利用のローカルログ、コミット不要）
+/app/lib/challenge/data/
+
 # 毎朝8:30・毎夕16:30 LaunchAgentの実行ログ（個人利用のローカルログ、コミット不要）
 /logs/*.log
 

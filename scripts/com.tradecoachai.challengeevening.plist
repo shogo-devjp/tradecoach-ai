@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradecoachai.challengeevening</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-challenge-evening-orchestration.sh</string>
+    </array>
+
+    <!-- 本稼働時の夕方唯一の入口。POST /api/v1/challenge/evening-orchestrate を1回叩くだけで
+         ①Paper Trading run → ②Universe Verification settle → ③Challenge Daily Record →
+         ④Milestone まで安全な順（前段成功時のみ次段へ）で実行される。
+         このplistが、旧 com.tradecoachai.papertrading（run-paper-trading.sh、
+         POST /api/v1/paper-trading/run のみを叩く単独スクリプト）を置き換える
+         唯一の夕方Paper Trading系エントリーポイントとなる（重複登録しないこと）。
+         既存の com.tradecoachai.eveningsettle（既存30銘柄verification・週次レポート、
+         別データセットを扱う既存機能）とは独立で、こちらは引き続きそのまま残る。 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>16</integer>
+        <key>Minute</key>
+        <integer>35</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 【重要】このplistはテンプレートであり、まだ ~/Library/LaunchAgents/ には登録していない
+         （本稼働はまだ開始しない）。 -->
+
+    <key>StandardOutPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-challenge-evening-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-challenge-evening-stderr.log</string>
+</dict>
+</plist>

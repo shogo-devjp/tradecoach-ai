@@ -9,11 +9,15 @@ const yahooFinance = new YahooFinance();
 // 決済処理全体の所要時間が線形に伸び続ける問題があった（並列化のみでロジックは変えない）。
 const SETTLE_CONCURRENCY = 8;
 
-function computeChangePercent(base: number, current: number): number {
+// app/lib/universeVerification（225銘柄verification、Version 1.5想定）から再利用するためexportする。
+// 既存の30銘柄verification（このファイル）のロジック・挙動は一切変更しない（exportキーワードの追加のみ）。
+// 「既存の定義・ロジックが利用可能な場合は勝手に別基準を作らない」方針に基づき、
+// 1/3/5営業日後の判定・騰落率計算・勝敗判定は必ずこの関数群を再利用すること。
+export function computeChangePercent(base: number, current: number): number {
   return Math.round(((current - base) / base) * 1000) / 10;
 }
 
-async function fetchFutureCloses(code: string, judgedAt: string): Promise<{ date: string; close: number }[]> {
+export async function fetchFutureCloses(code: string, judgedAt: string): Promise<{ date: string; close: number }[]> {
   const period1 = new Date(judgedAt);
   const period2 = new Date(judgedAt);
   period2.setDate(period2.getDate() + 15);
@@ -26,7 +30,7 @@ async function fetchFutureCloses(code: string, judgedAt: string): Promise<{ date
 }
 
 // 買い＝上昇で勝ち、売り＝下落で勝ち。方向性のあるシグナルのみ勝敗をつけられる。
-function resolveDirectionalOutcome(signal: "買い" | "売り", day5ChangePercent: number): "win" | "loss" {
+export function resolveDirectionalOutcome(signal: "買い" | "売り", day5ChangePercent: number): "win" | "loss" {
   return signal === "買い"
     ? day5ChangePercent > 0
       ? "win"

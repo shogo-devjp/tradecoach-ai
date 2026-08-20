@@ -17,8 +17,18 @@ import type { VerificationRecord } from "./types";
 // 個人利用・無料運用が前提のため、外部DBは使わずサーバーのローカルJSONファイルに保存する。
 // 将来サーバーレス環境（Vercel等）にデプロイする場合はファイルシステムが永続化されないため、
 // Vercel KV/Supabase等の無料枠DBに置き換える必要がある。
-const DATA_DIR = path.join(process.cwd(), "app/lib/verification/data");
-const DATA_FILE = path.join(DATA_DIR, "log.json");
+//
+// VERIFICATION_DATA_DIR環境変数でデータディレクトリを差し替え可能にしてある（テスト専用。
+// 本番では設定しないため挙動は変わらない）。Paper Trading Phase1で本番verificationログが
+// 開発測定によって汚染された反省を踏まえ、recordVerification:falseのテストを本番データに
+// 触れずに実施できるようにするための追加（app/lib/paperTrading/store.tsと同じパターン）。
+function dataDir(): string {
+  return process.env.VERIFICATION_DATA_DIR ?? path.join(process.cwd(), "app/lib/verification/data");
+}
+
+function dataFile(): string {
+  return path.join(dataDir(), "log.json");
+}
 
 function todayKey(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
@@ -26,7 +36,7 @@ function todayKey(): string {
 
 async function readLog(): Promise<VerificationRecord[]> {
   try {
-    const raw = await fs.readFile(DATA_FILE, "utf-8");
+    const raw = await fs.readFile(dataFile(), "utf-8");
     return JSON.parse(raw) as VerificationRecord[];
   } catch {
     return [];
@@ -34,8 +44,8 @@ async function readLog(): Promise<VerificationRecord[]> {
 }
 
 async function writeLog(records: VerificationRecord[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DATA_FILE, JSON.stringify(records, null, 2), "utf-8");
+  await fs.mkdir(dataDir(), { recursive: true });
+  await fs.writeFile(dataFile(), JSON.stringify(records, null, 2), "utf-8");
 }
 
 // scanUniverse.tsは複数銘柄を並行分析するため、read-modify-writeが重ならないよう

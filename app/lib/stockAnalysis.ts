@@ -18,10 +18,16 @@ export interface AnalyzeOptions {
   // 一括スクリーニング（日経225スキャン）は銘柄数が多くAPI呼び出しが増えるため、
   // includeIntraday:false で日足＋地合いのみの軽量分析にする。
   includeIntraday?: boolean;
+  // verificationログ（app/lib/verification/data/log.json）へ記録するかどうか。
+  // デフォルトは必ずtrue＝既存の本番挙動（朝夕バッチ・個別銘柄ページ閲覧）を一切変更しない。
+  // 開発・性能測定スクリプトからのみ明示的にfalseを渡し、本番verificationデータを汚さずに
+  // analyzeStockByCode()を呼べるようにする（Paper Trading Phase1の225銘柄実測で本番ログが
+  // 汚染された反省を踏まえた追加オプション）。
+  recordVerification?: boolean;
 }
 
 export async function analyzeStockByCode(code: string, options: AnalyzeOptions = {}) {
-  const { includeIntraday = true } = options;
+  const { includeIntraday = true, recordVerification = true } = options;
   const symbol = `${code}.T`;
   const period1 = new Date();
   period1.setDate(period1.getDate() - 365);
@@ -86,31 +92,34 @@ export async function analyzeStockByCode(code: string, options: AnalyzeOptions =
   // AIが外れた理由を後から分析できるよう、地合い・ダウ理論・ATR・出来高倍率・
   // エントリータイミングに加え、Version 1.2ではRSI/MACD/MA・EntryBlock・risk・todayAction・
   // 地合いの内訳・イントラデイトレンド・決算リスクも合わせて保存する。
-  recordJudgment({
-    code,
-    name: result.name ?? code,
-    score: result.score,
-    signal: result.signal,
-    price: result.price ?? 0,
-    marketCondition: result.marketRegime.overall,
-    dowTheoryStatus: result.indicators.dowTheory.status,
-    atrPercent: result.atrPercent,
-    volumeRatio: result.indicators.volume.ratio,
-    entryTiming: result.entryTiming,
-    indicatorValues: result.indicatorValues,
-    entryBlockLevel: result.entryBlock.level,
-    entryBlockReason: result.entryBlock.reason,
-    riskLevel: result.risk.level,
-    todayAction: result.todayAction,
-    todayActionReason: result.todayActionReason,
-    marketRegimeDetail: { nikkei225: result.marketRegime.nikkei225, topix: result.marketRegime.topix },
-    trend60m: result.trend60m,
-    trend15m: result.trend15m,
-    earningsDate: earnings.earningsDate,
-    daysFromEarnings,
-    earningsRiskFlag,
-    earningsIsEstimate: earnings.isEstimate,
-  }).catch((error) => console.error("[verification] 判定の記録に失敗しました:", error));
+  // recordVerification:false（開発・性能測定専用）の場合はこの副作用自体をスキップする。
+  if (recordVerification) {
+    recordJudgment({
+      code,
+      name: result.name ?? code,
+      score: result.score,
+      signal: result.signal,
+      price: result.price ?? 0,
+      marketCondition: result.marketRegime.overall,
+      dowTheoryStatus: result.indicators.dowTheory.status,
+      atrPercent: result.atrPercent,
+      volumeRatio: result.indicators.volume.ratio,
+      entryTiming: result.entryTiming,
+      indicatorValues: result.indicatorValues,
+      entryBlockLevel: result.entryBlock.level,
+      entryBlockReason: result.entryBlock.reason,
+      riskLevel: result.risk.level,
+      todayAction: result.todayAction,
+      todayActionReason: result.todayActionReason,
+      marketRegimeDetail: { nikkei225: result.marketRegime.nikkei225, topix: result.marketRegime.topix },
+      trend60m: result.trend60m,
+      trend15m: result.trend15m,
+      earningsDate: earnings.earningsDate,
+      daysFromEarnings,
+      earningsRiskFlag,
+      earningsIsEstimate: earnings.isEstimate,
+    }).catch((error) => console.error("[verification] 判定の記録に失敗しました:", error));
+  }
 
   return result;
 }

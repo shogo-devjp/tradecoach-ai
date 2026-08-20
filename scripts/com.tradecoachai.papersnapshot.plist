@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradecoachai.papersnapshot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-paper-signal-snapshot.sh</string>
+    </array>
+
+    <!-- 朝スクリーニング（com.tradecoachai.morningsignal, 8:30）完了後にPaper TradingのSignal
+         Snapshotを捕捉する。8:35開始とし、9:00 JSTの締切までポーリングする
+         （run-paper-signal-snapshot.sh参照）。 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>35</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 【重要】このplistはテンプレートであり、まだ ~/Library/LaunchAgents/ には登録していない
+         （Phase 1はdry-run・テストのみで、自動運用の本稼働はまだ開始しない）。 -->
+
+    <key>StandardOutPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-paper-snapshot-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-paper-snapshot-stderr.log</string>
+</dict>
+</plist>

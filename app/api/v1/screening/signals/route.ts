@@ -74,8 +74,11 @@ export async function POST(request: Request) {
     let freshScan = false;
 
     if (!cached) {
+      // Signal Snapshot（Paper Trading・225銘柄verification共通の判断ソース）で
+      // 「スキャン開始時刻」を記録するために、scanUniverse()呼び出し直前の時刻を保持しておく。
+      const scanStartedAt = new Date().toISOString();
       const { candidates, failedCount } = await scanUniverse(STOCK_UNIVERSES.nikkei225);
-      cached = setCachedScan(candidates, STOCK_UNIVERSES.nikkei225.length, failedCount);
+      cached = setCachedScan(candidates, STOCK_UNIVERSES.nikkei225.length, failedCount, scanStartedAt);
       freshScan = true;
       // 再スキャン前にすでに通知済みだった場合、新しいキャッシュにもその状態を引き継ぐ
       if (alreadyNotifiedToday) markScanNotified();
