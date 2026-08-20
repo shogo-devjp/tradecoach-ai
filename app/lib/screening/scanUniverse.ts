@@ -39,6 +39,10 @@ export async function scanUniverse(codes: string[], concurrency = 8): Promise<Sc
           todayAction: data.todayAction,
           todayActionReason: data.todayActionReason,
           reasons: data.reasons,
+          // Paper Trading用（Signal Snapshotへ転記するため）。既存の表示・通知ロジックは未参照。
+          entryPrice: data.entryPrice,
+          stopLoss: data.stopLoss,
+          takeProfit: data.takeProfit,
         });
       } else {
         failedCount++;

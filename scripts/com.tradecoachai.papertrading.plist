@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradecoachai.papertrading</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-paper-trading.sh</string>
+    </array>
+
+    <!-- 既存evening-settle（16:30）の直後、当日の日足確定後にPaper Tradingの約定・EXITを確定する。 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>16</integer>
+        <key>Minute</key>
+        <integer>35</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 【重要】このplistはテンプレートであり、まだ ~/Library/LaunchAgents/ には登録していない
+         （Phase 1はdry-run・テストのみで、自動運用の本稼働はまだ開始しない）。 -->
+
+    <key>StandardOutPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-paper-trading-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-paper-trading-stderr.log</string>
+</dict>
+</plist>
