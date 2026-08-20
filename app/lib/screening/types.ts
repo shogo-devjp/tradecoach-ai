@@ -1,4 +1,4 @@
-import type { EntryBlock, RiskLevel, Signal, TodayAction } from "@/app/lib/technicalAnalysis/types";
+import type { EntryBlock, IndicatorRawValues, RiskLevel, Signal, TodayAction } from "@/app/lib/technicalAnalysis/types";
 
 export interface ScreenedStock {
   code: string;
@@ -27,4 +27,7 @@ export interface ScreenedStock {
   entryPrice: number;
   stopLoss: number;
   takeProfit: number;
+  // 225銘柄verification（app/lib/universeVerification）がSnapshotへ転記するために追加。
+  // 判断の再現・後解析用（RSI/MACD/移動平均等の生値）。表示・通知ロジックは未参照。
+  indicatorValues: IndicatorRawValues;
 }

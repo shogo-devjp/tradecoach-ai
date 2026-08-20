@@ -2,6 +2,10 @@ import type { ScreenedStock } from "./types";
 
 interface CachedScan {
   dateKey: string;
+  // scanUniverse()呼び出し開始時刻。未指定の呼び出し元との後方互換のため、
+  // 省略時はscannedAt（完了時刻）と同値にフォールバックする（既存の唯一の呼び出し元である
+  // screening/signals/route.ts は明示的に渡すため、実運用では常に正しい開始時刻が入る）。
+  scanStartedAt: string;
   scannedAt: string;
   scannedCount: number;
   failedCount: number;
@@ -28,11 +32,14 @@ export function getCachedScan(): CachedScan | null {
 export function setCachedScan(
   candidates: ScreenedStock[],
   scannedCount: number,
-  failedCount: number
+  failedCount: number,
+  scanStartedAt?: string
 ): CachedScan {
+  const scannedAt = new Date().toISOString();
   cache = {
     dateKey: todayKey(),
-    scannedAt: new Date().toISOString(),
+    scanStartedAt: scanStartedAt ?? scannedAt,
+    scannedAt,
     scannedCount,
     failedCount,
     candidates,

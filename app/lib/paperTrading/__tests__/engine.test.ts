@@ -18,6 +18,19 @@ function withTempDataDir<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
+const DUMMY_INDICATOR_VALUES = {
+  rsi: 55,
+  macdLine: 1,
+  macdSignal: 0.5,
+  macdHistogram: 0.5,
+  sma5: 100,
+  sma25: 98,
+  sma75: 95,
+  ma5DiffPercent: 2,
+  ma25DiffPercent: 4,
+  ma75DiffPercent: 6,
+};
+
 function candidate(code: string, name: string, score: number, signal: "買い" | "売り" | "待ち", price: number, stopLoss: number, takeProfit: number) {
   return {
     code,
@@ -38,12 +51,14 @@ function candidate(code: string, name: string, score: number, signal: "買い" |
     entryPrice: price,
     stopLoss,
     takeProfit,
+    indicatorValues: DUMMY_INDICATOR_VALUES,
   };
 }
 
 function fakeCachedScan(date: string, candidates: ReturnType<typeof candidate>[]) {
   return {
     dateKey: date,
+    scanStartedAt: `${date}T08:29:30.000Z`,
     scannedAt: `${date}T08:30:00.000Z`,
     scannedCount: candidates.length,
     failedCount: 0,

@@ -16,6 +16,7 @@ export async function POST() {
       cachedScan: cached
         ? {
             dateKey: cached.dateKey,
+            scanStartedAt: cached.scanStartedAt,
             scannedAt: cached.scannedAt,
             scannedCount: cached.scannedCount,
             failedCount: cached.failedCount,

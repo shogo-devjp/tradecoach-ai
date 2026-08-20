@@ -16,9 +16,23 @@ function withTempDataDir<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
+const DUMMY_INDICATOR_VALUES = {
+  rsi: 55,
+  macdLine: 1,
+  macdSignal: 0.5,
+  macdHistogram: 0.5,
+  sma5: 100,
+  sma25: 98,
+  sma75: 95,
+  ma5DiffPercent: 2,
+  ma25DiffPercent: 4,
+  ma75DiffPercent: 6,
+};
+
 function fakeCachedScan(date: string) {
   return {
     dateKey: date,
+    scanStartedAt: `${date}T08:29:30.000Z`,
     scannedAt: `${date}T08:30:00.000Z`,
     scannedCount: 2,
     failedCount: 0,
@@ -42,6 +56,7 @@ function fakeCachedScan(date: string) {
         entryPrice: 3000,
         stopLoss: 2920,
         takeProfit: 3200,
+        indicatorValues: DUMMY_INDICATOR_VALUES,
       },
       {
         code: "9984",
@@ -62,6 +77,7 @@ function fakeCachedScan(date: string) {
         entryPrice: 8000,
         stopLoss: 7800,
         takeProfit: 8400,
+        indicatorValues: DUMMY_INDICATOR_VALUES,
       },
     ],
   };

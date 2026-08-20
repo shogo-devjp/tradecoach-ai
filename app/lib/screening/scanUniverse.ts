@@ -43,6 +43,8 @@ export async function scanUniverse(codes: string[], concurrency = 8): Promise<Sc
           entryPrice: data.entryPrice,
           stopLoss: data.stopLoss,
           takeProfit: data.takeProfit,
+          // 225銘柄verification用（判断の再現・後解析用）。既存の表示・通知ロジックは未参照。
+          indicatorValues: data.indicatorValues,
         });
       } else {
         failedCount++;

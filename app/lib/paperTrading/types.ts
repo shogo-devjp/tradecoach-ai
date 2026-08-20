@@ -1,17 +1,20 @@
-import type { EntryBlockLevel, RiskLevel, Signal, TodayAction } from "../technicalAnalysis/types";
+import type { EntryBlockLevel, IndicatorRawValues, RiskLevel, Signal, TodayAction } from "../technicalAnalysis/types";
 
 // ============================================================================
-// Signal Snapshot（設計書§7の核）
+// Signal Snapshot（設計書§7の核。Paper Trading・225銘柄universeVerification共通の
+// 「唯一の判断ソース」。8:30スキャン→本Snapshot固定→Paper Trading候補選抜／
+// Verification全件記録、という単一の分岐元として両モジュールから参照される）
 // ============================================================================
 // 朝スクリーニングが正常完了したことを確認した直後（9:00 JSTより前）に、その時点の
 // 全候補（getCachedScan()の生候補一覧）をそのままコピーして凍結保存する。
-// 一度保存した当日分は上書きしない。Paper Tradingの意思決定・記録の根拠はこのSnapshotのみとし、
-// verification/data/log.json（後から上書きされうる）には一切依存しない。
+// 一度保存した当日分は上書きしない。意思決定・記録の根拠はこのSnapshotのみとし、
+// verification/data/log.json（後から上書きされうる既存30銘柄方式）には一切依存しない。
 
 export interface SignalSnapshot {
   id: string; // `${date}-${code}`
   date: string; // YYYY-MM-DD（判定日）
   analyzedAt: string; // ISO8601（朝スクリーニングの分析実行時刻＝getCachedScan().scannedAt）
+  scanStartedAt: string; // ISO8601（scanUniverse()呼び出し開始時刻）
   snapshotCapturedAt: string; // ISO8601（完了確認後、実際に凍結保存した時刻）
   scanCompletedAt: string; // ISO8601（スキャン自体が完了した時刻。Phase1ではanalyzedAtと同値）
   universeSize: number; // 対象銘柄数（期待値）
@@ -32,6 +35,8 @@ export interface SignalSnapshot {
   riskLevel: RiskLevel;
   strategyVersion: string; // 例 "strategy-a-standard@1"（判定ロジックのバージョン）
   sourceScannedAt: string; // getCachedScan().scannedAt（元データの追跡用。analyzedAtと同値）
+  // 判断の再現・後解析用（RSI/MACD/移動平均等の生値）。universeVerificationが主に利用する。
+  indicatorValues: IndicatorRawValues;
 }
 
 // Snapshot捕捉1回（1日1回）の結果。捕捉できなかった日もfail-safeとして必ず1件残す。

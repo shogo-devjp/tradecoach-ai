@@ -34,6 +34,7 @@ async function writeStore(shape: SnapshotStoreShape): Promise<void> {
 
 export interface CachedScanLike {
   dateKey: string;
+  scanStartedAt: string;
   scannedAt: string;
   scannedCount: number;
   failedCount: number;
@@ -100,6 +101,7 @@ export async function captureSignalSnapshot(input: CaptureSnapshotInput): Promis
       id: `${date}-${c.code}`,
       date,
       analyzedAt: cachedScan.scannedAt,
+      scanStartedAt: cachedScan.scanStartedAt,
       snapshotCapturedAt: capturedAtIso,
       scanCompletedAt: cachedScan.scannedAt,
       universeSize,
@@ -119,6 +121,7 @@ export async function captureSignalSnapshot(input: CaptureSnapshotInput): Promis
       riskLevel: c.risk,
       strategyVersion: input.strategyVersion,
       sourceScannedAt: cachedScan.scannedAt,
+      indicatorValues: c.indicatorValues,
     }));
 
     store.snapshots.push(...rows);
