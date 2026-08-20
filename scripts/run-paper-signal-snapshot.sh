@@ -1,24 +1,28 @@
 #!/bin/bash
-# Paper Trading（Phase 1）朝処理。朝スクリーニング（com.tradecoachai.morningsignal）完了後に
-# 起動し、POST /api/v1/paper-trading/snapshot をポーリングして「正常完了確認後・9:00 JSTより前」に
-# Signal Snapshotを凍結保存させる。
+# Paper Trading（Phase 1）＋ 225銘柄Verification 朝処理。朝スクリーニング
+# （com.tradecoachai.morningsignal）完了後に起動し、POST /api/v1/universe-verification/orchestrate
+# をポーリングする。このAPIは「③スキャン完了確認後にSnapshot固定 → ④固定成功を確認した直後に
+# Verification 225件をinitialize」までを1回のリクエストで直列実行する（固定時刻依存を廃止し、
+# 前段の正常完了をトリガーに次段を直後に実行する設計。app/lib/universeVerification/
+# morningOrchestration.ts参照）。
 #
 # 設計方針（設計書§7・§12）：
 # - このスクリプトはビジネスロジックを一切持たない。捕捉できるかどうか（対象銘柄数・成功/失敗件数・
-#   9:00締切）の判断はすべてAPI側（app/lib/paperTrading/engine.ts, signalSnapshotStore.ts）が行う。
+#   9:00締切）の判断はすべてAPI側（app/lib/universeVerification/morningOrchestration.ts,
+#   paperTrading/engine.ts, signalSnapshotStore.ts）が行う。
 #   スクリプトは「決まったURLを繰り返し叩いてログを残すだけ」。
 # - 将来Windows専用PCへ移行する際は、このスクリプトとplistだけをタスクスケジューラ用に
 #   置き換えれば良く、Engine・APIルートには一切手を入れない。
 #
-# 既存の朝夕バッチ（run-morning-signal.sh / run-evening-settle.sh）・verification・
-# LINE通知には一切触れない（読み取り専用でSnapshot APIを叩くだけ）。
+# 既存の朝夕バッチ（run-morning-signal.sh / run-evening-settle.sh）・既存30銘柄verification・
+# LINE通知には一切触れない（Snapshot/Verification APIを叩くだけ）。
 set -u
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/paper-signal-snapshot.log"
 STATE_DIR="$PROJECT_DIR/logs/state"
-SNAPSHOT_API_URL="http://localhost:3000/api/v1/paper-trading/snapshot"
+SNAPSHOT_API_URL="http://localhost:3000/api/v1/universe-verification/orchestrate"
 RESPONSE_FILE="$(mktemp /tmp/tradecoach-paper-snapshot-XXXXXX.json)"
 
 source "$PROJECT_DIR/scripts/lib/wait-for-webserver.sh"
@@ -79,7 +83,7 @@ for attempt in $(seq 1 "$POLL_MAX_ATTEMPTS"); do
       const fs = require("fs");
       try {
         const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
-        console.log(d.captured === true ? "true" : "false");
+        console.log(d.snapshot && d.snapshot.captured === true ? "true" : "false");
       } catch { console.log("false"); }
     ' "$RESPONSE_FILE" 2>/dev/null)
 
@@ -87,7 +91,9 @@ for attempt in $(seq 1 "$POLL_MAX_ATTEMPTS"); do
       const fs = require("fs");
       try {
         const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
-        console.log(`captured=${d.captured} reason=${d.reason ?? "-"} universeSize=${d.universeSize ?? "-"} succeededCount=${d.succeededCount ?? "-"} failedCount=${d.failedCount ?? "-"}`);
+        const s = d.snapshot ?? {};
+        const v = d.verification ?? null;
+        console.log(`captured=${s.captured} reason=${s.reason ?? "-"} universeSize=${s.universeSize ?? "-"} succeededCount=${s.succeededCount ?? "-"} failedCount=${s.failedCount ?? "-"} verificationInitialized=${v ? v.initialized : "-"} verificationCreatedCount=${v ? v.createdCount : "-"}`);
       } catch { console.log("(レスポンス解析失敗)"); }
     ' "$RESPONSE_FILE" 2>/dev/null)
 
@@ -100,10 +106,13 @@ for attempt in $(seq 1 "$POLL_MAX_ATTEMPTS"); do
     # after_market_openの場合はこれ以上ポーリングしても無意味なので即終了する。
     reason=$(node -e '
       const fs = require("fs");
-      try { console.log(JSON.parse(fs.readFileSync(process.argv[1], "utf-8")).reason ?? ""); } catch { console.log(""); }
+      try {
+        const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
+        console.log((d.snapshot && d.snapshot.reason) ?? "");
+      } catch { console.log(""); }
     ' "$RESPONSE_FILE" 2>/dev/null)
     if [ "$reason" = "after_market_open" ]; then
-      echo "[$(timestamp)] STOP: 9:00 JSTを過ぎたためSnapshotを作成しませんでした（fail-safe。当日は新規BUYなし）: $summary" >> "$LOG_FILE"
+      echo "[$(timestamp)] STOP: 9:00 JSTを過ぎたためSnapshot/Verificationを作成しませんでした（fail-safe。当日は新規BUYなし・225件verificationも作成なし）: $summary" >> "$LOG_FILE"
       touch "$SNAPSHOT_MARKER"
       exit 0
     fi

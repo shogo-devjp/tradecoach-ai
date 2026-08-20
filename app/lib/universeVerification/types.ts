@@ -8,6 +8,7 @@ import type {
 // 既存30銘柄verification（app/lib/verification）のVerificationOutcomeをそのまま再利用する
 // （勝手に別基準を作らず、既存仕様との整合性を保つ）。
 import type { VerificationOutcome, DayResult } from "../verification/types";
+import type { SnapshotCaptureResult } from "../paperTrading/types";
 
 export type { VerificationOutcome, DayResult };
 
@@ -80,4 +81,35 @@ export interface InitializeUniverseVerificationResult {
 export interface SettleUniverseVerificationResult {
   processedCount: number; // settle対象として調べたpendingレコード数
   updatedCount: number; // day1/day3/day5/outcomeのいずれかが更新されたレコード数
+}
+
+// ============================================================================
+// 朝オーケストレーション（②スキャン完了確認 → ③Snapshot固定 → ④Verification初期化）
+// ============================================================================
+// 固定時刻（例:8:33）依存を廃止し、「前段の正常完了」をトリガーに次段を直後に実行する
+// ための1日1回の実行記録。冪等：captureSignalSnapshot()・initializeUniverseVerification()が
+// それぞれ既に上書き禁止・重複防止であるため、本レコードも同一dateなら安全に上書き更新できる
+// （実行結果の反映のみで、Snapshot/Verificationレコード自体を再生成することはない）。
+export interface MorningOrchestrationRecord {
+  date: string;
+  scanStartedAt: string | null; // ②スキャン開始時刻（getCachedScan().scanStartedAt）
+  scanCompletedAt: string | null; // ②スキャン完了時刻（getCachedScan().scannedAt）
+  universeSize: number | null;
+  successCount: number | null;
+  failedCount: number | null;
+  snapshotCaptured: boolean; // ③Snapshot固定に成功したか
+  snapshotCapturedAt: string | null;
+  snapshotSkipReason: string | null; // fail-safe理由（cache_unavailable等）
+  verificationInitialized: boolean; // ④Verification初期化に成功したか（③成功時のみ試行する）
+  verificationInitializedAt: string | null;
+  verificationCreatedCount: number | null;
+  verificationSkipReason: string | null;
+  updatedAt: string; // このレコードが最後に更新された時刻（監査用）
+}
+
+export interface MorningOrchestrationResult {
+  date: string;
+  snapshot: SnapshotCaptureResult;
+  verification: InitializeUniverseVerificationResult | null; // ③が失敗した場合はnull（④は試行しない）
+  record: MorningOrchestrationRecord;
 }
