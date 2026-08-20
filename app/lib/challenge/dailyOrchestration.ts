@@ -21,6 +21,10 @@ export interface GenerateDailyRecordResult {
   reason?: string;
   record: ChallengeDailyRecord | null;
   newEvents: ChallengeEvent[];
+  // 夕方統合オーケストレーション（eveningOrchestration.ts）が③④を個別に追跡できるように、
+  // Daily Record生成完了時刻とMilestone判定完了時刻を分けて返す。
+  dailyRecordGeneratedAt: string | null;
+  milestonesProcessedAt: string | null;
 }
 
 // §10で想定した「Paper Trading EXIT/ENTRY処理 → Universe Verification settle → Challenge Daily
@@ -35,13 +39,14 @@ export async function generateDailyRecordAndMilestones(input: GenerateDailyRecor
 
   const buildResult = await buildAndSaveDailyRecord({ date, strategyId, now: input.now });
   if (!buildResult.record) {
-    return { date, recordCreated: false, reason: buildResult.reason, record: null, newEvents: [] };
+    return { date, recordCreated: false, reason: buildResult.reason, record: null, newEvents: [], dailyRecordGeneratedAt: null, milestonesProcessedAt: null };
   }
+  const dailyRecordGeneratedAt = new Date().toISOString();
 
   // 冪等性：Daily Recordが既に存在していた場合（今回新規作成していない場合）は、
   // Milestone判定も既に過去に実行済みのはずなので再実行しない（二重記録防止の二重の保険）。
   if (!buildResult.created) {
-    return { date, recordCreated: false, reason: buildResult.reason, record: buildResult.record, newEvents: [] };
+    return { date, recordCreated: false, reason: buildResult.reason, record: buildResult.record, newEvents: [], dailyRecordGeneratedAt: null, milestonesProcessedAt: null };
   }
 
   const [previousRecords, allTrades] = await Promise.all([readDailyRecords(), getTrades(strategyId)]);
@@ -55,6 +60,7 @@ export async function generateDailyRecordAndMilestones(input: GenerateDailyRecor
     previousRecords: priorRecords,
     cumulativeTradesOrderedAsc,
   });
+  const milestonesProcessedAt = new Date().toISOString();
 
-  return { date, recordCreated: true, record: buildResult.record, newEvents };
+  return { date, recordCreated: true, record: buildResult.record, newEvents, dailyRecordGeneratedAt, milestonesProcessedAt };
 }
