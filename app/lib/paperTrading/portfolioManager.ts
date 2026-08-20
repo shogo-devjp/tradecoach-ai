@@ -14,6 +14,7 @@ const TRADES_FILE = "trades.json";
 const EXECUTION_LOG_FILE = "execution-log.json";
 const PORTFOLIO_HISTORY_FILE = "portfolio-history.json";
 const PORTFOLIO_STATE_FILE = "portfolio-state.json";
+const REJECTED_ENTRIES_FILE = "rejected-entries.json";
 
 // --- Portfolio State（現金・累計損益・冪等性チェック用の実行済み日付） ---
 
@@ -121,6 +122,43 @@ export async function appendPortfolioSnapshot(snapshot: PaperPortfolioSnapshot):
 export async function getPortfolioHistory(strategyId: string): Promise<PaperPortfolioSnapshot[]> {
   const all = await readJson<PaperPortfolioSnapshot[]>(PORTFOLIO_HISTORY_FILE, []);
   return all.filter((s) => s.strategyId === strategyId).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// --- Rejected Entries（当日BUY候補のうち採用されなかった理由の記録） ---
+//
+// runDaily()の判断・約定ロジックには一切影響しない、純粋な追記専用ログ。
+// 「なぜ買わなかったか」をYouTube記録レイヤー（app/lib/challenge）が後から参照できるように、
+// runDaily()が既に計算済みの結果（RunDailyResult.rejectedEntries）をそのまま保存するだけ。
+// 独自の再計算・再判定は行わない。
+
+export interface RejectedEntryRecord {
+  strategyId: string;
+  date: string;
+  code: string;
+  reason: string;
+}
+
+export async function appendRejectedEntries(
+  strategyId: string,
+  date: string,
+  rejectedEntries: { code: string; reason: string }[]
+): Promise<void> {
+  if (rejectedEntries.length === 0) return;
+  await enqueue(REJECTED_ENTRIES_FILE, async () => {
+    const all = await readJson<RejectedEntryRecord[]>(REJECTED_ENTRIES_FILE, []);
+    // 冪等性：同一strategyId・同一dateの分が既にあれば何もしない（runDaily自体が
+    // 同一dateの二重実行を防いでいるため、通常この分岐に到達するのは同日再送時のみ）。
+    if (all.some((r) => r.strategyId === strategyId && r.date === date)) return;
+    for (const entry of rejectedEntries) {
+      all.push({ strategyId, date, code: entry.code, reason: entry.reason });
+    }
+    await writeJson(REJECTED_ENTRIES_FILE, all);
+  });
+}
+
+export async function getRejectedEntries(strategyId: string, date: string): Promise<RejectedEntryRecord[]> {
+  const all = await readJson<RejectedEntryRecord[]>(REJECTED_ENTRIES_FILE, []);
+  return all.filter((r) => r.strategyId === strategyId && r.date === date);
 }
 
 // --- ヘルパー：ポジションを開く／閉じる ---

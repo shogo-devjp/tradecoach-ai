@@ -8,6 +8,7 @@ import { captureSignalSnapshot, getSignalSnapshotRows, type CachedScanLike } fro
 import {
   appendExecutionLog,
   appendPortfolioSnapshot,
+  appendRejectedEntries,
   appendTrade,
   buildOpenPosition,
   closePositionWith,
@@ -374,6 +375,9 @@ export async function runDaily(input: RunDailyInput): Promise<RunDailyResult> {
     for (const trade of tradesToAppend) await appendTrade(trade);
     for (const log of logsToAppend) await appendExecutionLog(log);
     await appendPortfolioSnapshot(snapshot);
+    // 判断・約定ロジックには一切影響しない追記専用ログ（YouTube記録レイヤーが
+    // 「なぜ買わなかったか」を後から参照するためのもの。既に計算済みの結果を保存するだけ）。
+    await appendRejectedEntries(input.strategyId, date, rejectedEntries);
     await savePortfolioState({
       strategyId: input.strategyId,
       cash: Math.round(cash),
