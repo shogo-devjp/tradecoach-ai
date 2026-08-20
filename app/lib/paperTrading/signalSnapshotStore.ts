@@ -109,6 +109,7 @@ export async function captureSignalSnapshot(input: CaptureSnapshotInput): Promis
       name: c.name,
       signal: c.signal,
       score: c.score,
+      confidence: c.confidence,
       todayAction: c.todayAction,
       priceAtJudgment: c.price,
       entryPriceCandidate: c.entryPrice,

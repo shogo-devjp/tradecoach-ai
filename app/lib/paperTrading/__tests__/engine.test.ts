@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { captureSignalSnapshot } from "../signalSnapshotStore";
 import { runDaily, type DailyBarProvider } from "../engine";
-import { getPortfolioState, getAllPositions, getTrades } from "../portfolioManager";
+import { getPortfolioState, getAllPositions, getTrades, getExecutionLog } from "../portfolioManager";
 import { STRATEGY_A_ID } from "../config";
 import type { DayBar } from "../exitResolver";
 
@@ -109,6 +109,95 @@ test("新規ENTRY当日にLowがSLへ到達した場合、同日中にEXITし1�
     const positions = await getAllPositions(STRATEGY_A_ID);
     assert.equal(positions.length, 1);
     assert.equal(positions[0]!.status, "closed");
+  });
+});
+
+// テストケース6（Engine統合）: BUY Snapshot → OpenでENTRY → 当日HighでTP到達 → 同日EXIT
+// → trades / execution-log / cash / portfolioへ正常反映されるところまでを通しで確認する。
+test("新規ENTRY当日にHighがTPへ到達した場合、同日中にTPでEXITしtrades/execution-log/cash/portfolioへ正しく反映される", async () => {
+  await withTempDataDir(async () => {
+    const cand = candidate("7203", "トヨタ自動車", 85, "買い", 3000, 2920, 3200);
+    await captureSignalSnapshot({ cachedScan: fakeCachedScan(DATE, [cand]), strategyVersion: "v1", now: new Date(`${DATE}T08:33:00+09:00`) });
+
+    const barProvider = makeBarProvider({
+      "7203": { open: 3000, high: 3250, low: 2980, close: 3200 }, // High(3250) >= TP(3200)、Low(2980)はSL(2920)未到達
+      "^N225": { open: 39000, high: 39200, low: 38900, close: 39100 },
+    });
+
+    const result = await runDaily({ strategyId: STRATEGY_A_ID, date: DATE, barProvider, benchmarkBarProvider: barProvider, now: new Date(`${DATE}T16:35:00+09:00`) });
+
+    // --- runDaily の戻り値 ---
+    assert.equal(result.newlyOpenedPositionIds.length, 1);
+    assert.equal(result.exitedPositionIds.length, 1, "同日中にTPでEXITしている");
+    assert.deepEqual(result.newlyOpenedPositionIds, result.exitedPositionIds);
+    assert.equal(result.rejectedEntries.length, 0);
+
+    // --- trades.json ---
+    const trades = await getTrades(STRATEGY_A_ID);
+    assert.equal(trades.length, 1);
+    assert.equal(trades[0]!.exitReason, "take_profit");
+    assert.equal(trades[0]!.holdingDays, 0);
+    assert.equal(trades[0]!.entryFillPrice, 3003, "Open(3000)×(1+10bps)");
+    assert.equal(trades[0]!.exitFillPrice, 3196.8, "TP(3200)×(1-10bps)");
+    assert.ok(trades[0]!.realizedPnl > 0, "TP到達なので利益が出ているはず");
+
+    // --- execution-log.json ---
+    const logs = await getExecutionLog(STRATEGY_A_ID);
+    assert.equal(logs.length, 2, "ENTRY・EXITそれぞれ1件ずつ");
+    const entryLog = logs.find((l) => l.side === "ENTRY");
+    const exitLog = logs.find((l) => l.side === "EXIT");
+    assert.ok(entryLog);
+    assert.equal(entryLog!.reason, "buy_signal");
+    assert.ok(exitLog);
+    assert.equal(exitLog!.reason, "take_profit");
+    assert.equal(exitLog!.referencePrice, 3200, "Gapしていないため指定TP価格そのものが基準");
+    assert.equal(exitLog!.gapAdjusted, false);
+    assert.equal(exitLog!.sameDayConflict, false);
+
+    // --- positions.json（状態がclosedで残ること） ---
+    const positions = await getAllPositions(STRATEGY_A_ID);
+    assert.equal(positions.length, 1);
+    assert.equal(positions[0]!.status, "closed");
+    assert.equal(positions[0]!.exit!.reason, "take_profit");
+
+    // --- portfolio（現金が実現益の分だけ増えていること） ---
+    const state = await getPortfolioState(STRATEGY_A_ID, 500_000);
+    assert.equal(state.cash, 500_000 + trades[0]!.realizedPnl);
+    assert.ok(state.cumulativeRealizedPnl > 0);
+    assert.equal(result.portfolioSnapshot!.cash, state.cash);
+    assert.equal(result.portfolioSnapshot!.openPositionCount, 0);
+  });
+});
+
+// テストケース7（Engine統合）: ENTRY当日にSL/TP双方へ到達した場合、既存ポジションと同じ
+// 保守ルール（SL優先）がEngine全体を通しても適用されることを確認する。
+test("新規ENTRY当日にSL/TP双方へ到達した場合、Engine全体を通してもSLが優先されて記録される", async () => {
+  await withTempDataDir(async () => {
+    const cand = candidate("7203", "トヨタ自動車", 85, "買い", 3000, 2920, 3200);
+    await captureSignalSnapshot({ cachedScan: fakeCachedScan(DATE, [cand]), strategyVersion: "v1", now: new Date(`${DATE}T08:33:00+09:00`) });
+
+    const barProvider = makeBarProvider({
+      "7203": { open: 3000, high: 3250, low: 2900, close: 3050 }, // High(3250)>=TP(3200) かつ Low(2900)<=SL(2920)
+      "^N225": { open: 39000, high: 39200, low: 38900, close: 39100 },
+    });
+
+    const result = await runDaily({ strategyId: STRATEGY_A_ID, date: DATE, barProvider, benchmarkBarProvider: barProvider, now: new Date(`${DATE}T16:35:00+09:00`) });
+
+    assert.equal(result.exitedPositionIds.length, 1);
+
+    const trades = await getTrades(STRATEGY_A_ID);
+    assert.equal(trades.length, 1);
+    assert.equal(trades[0]!.exitReason, "stop_loss", "SL/TP同時到達時はSLが優先される");
+
+    const logs = await getExecutionLog(STRATEGY_A_ID);
+    const exitLog = logs.find((l) => l.side === "EXIT");
+    assert.ok(exitLog);
+    assert.equal(exitLog!.reason, "stop_loss");
+    assert.equal(exitLog!.sameDayConflict, true, "同日競合フラグがexecution-logに記録される");
+    assert.equal(exitLog!.referencePrice, 2920, "SL価格が基準");
+
+    const positions = await getAllPositions(STRATEGY_A_ID);
+    assert.equal(positions[0]!.exit!.sameDayConflict, true);
   });
 });
 

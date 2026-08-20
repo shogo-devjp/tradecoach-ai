@@ -21,6 +21,8 @@ export interface SignalSnapshot {
   name: string;
   signal: Signal; // 買い/売り/待ち
   score: number;
+  // 既存rankBuySignals()（app/lib/screening/rankings.ts）と同じ同点時tie-break条件に使うため保持する。
+  confidence: number;
   todayAction: TodayAction;
   priceAtJudgment: number; // 判定時点の参照価格（前日終値ベース。約定には使わない）
   entryPriceCandidate: number; // priceLevels.entryPrice
@@ -219,6 +221,7 @@ export interface BuyCandidate {
   name: string;
   snapshotId: string;
   score: number;
+  confidence: number;
   reasons: string[];
   stopLoss: number;
   takeProfit: number;

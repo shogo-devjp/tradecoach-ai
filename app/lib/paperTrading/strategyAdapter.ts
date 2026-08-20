@@ -12,14 +12,19 @@ export const strategyA: PaperStrategy = {
     const { snapshotRows, openPositions } = context;
     const heldCodes = new Set(openPositions.map((p) => p.code));
 
+    // 既存rankBuySignals()（app/lib/screening/rankings.ts）と全く同じ並び順
+    // （score降順、同点はconfidence降順）にする。それでも同点が残る場合はcode昇順で
+    // 決定論的に確定させ、配列の到達順（Promise.allSettledの解決順・スキャン対象の列挙順）に
+    // 一切依存しないようにする。
     const buyCandidates: BuyCandidate[] = snapshotRows
       .filter((row) => row.signal === "買い" && !heldCodes.has(row.code))
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.code.localeCompare(b.code))
       .map((row) => ({
         code: row.code,
         name: row.name,
         snapshotId: row.id,
         score: row.score,
+        confidence: row.confidence,
         reasons: [`score=${row.score}`, `todayAction=${row.todayAction}`],
         stopLoss: row.stopLoss,
         takeProfit: row.takeProfit,
