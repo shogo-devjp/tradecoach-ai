@@ -16,6 +16,10 @@
 #
 # Version 1.3のキャッチアップ設計: 朝と同様に「当日実行済みか」「安全な時間帯か」を確認する。
 # 夕方は16:00より前だと当日の日足がまだ確定していない可能性が高いため、16:00〜23:59 JSTのみ許可する。
+#
+# Version 1.4.1で追加: Webサーバー起動待ち（scripts/lib/wait-for-webserver.sh）。
+# Mac復帰直後にcom.tradecoachai.webserverとこのジョブのRunAtLoadがほぼ同時に走り、
+# サーバー起動が間に合わずcurlが失敗する事故が実際に発生したため、API呼び出しの前に必ず待機する。
 set -u
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,6 +29,8 @@ STATE_DIR="$PROJECT_DIR/logs/state"
 VERIFICATION_API_URL="http://localhost:3000/api/v1/verification"
 WEEKLY_REPORT_API_URL="http://localhost:3000/api/v1/verification/weekly-report"
 WEEKLY_RESPONSE_FILE="$(mktemp /tmp/tradecoach-weekly-report-XXXXXX.json)"
+
+source "$PROJECT_DIR/scripts/lib/wait-for-webserver.sh"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR"
 
@@ -58,6 +64,14 @@ fi
 if [ "$CURRENT_HHMM" -lt "1600" ]; then
   echo "[$(timestamp)] Outside evening window (16:00-23:59 JST, now ${CURRENT_HHMM}). Skip (today's closes may not be settled yet)." >> "$LOG_FILE"
   exit 0
+fi
+
+# 1.7) 本番Webサーバー(127.0.0.1:3000)が応答可能になるまで待つ。Mac復帰直後の起動競合対策。
+#      最大約60秒待っても応答がなければERRORとして終了し、当日実行済みマーカーは作らない
+#      （安全窓内であれば次回のキャッチアップ起動で再試行される）。
+if ! wait_for_webserver "$LOG_FILE"; then
+  echo "[$(timestamp)] ERROR: Webサーバーが約60秒待っても起動しませんでした。処理を中断します。" >> "$LOG_FILE"
+  exit 1
 fi
 
 # 2) verification settle（2回目）。新しい判定は作らず、TOP3も作らず、LINE通知もしない。
