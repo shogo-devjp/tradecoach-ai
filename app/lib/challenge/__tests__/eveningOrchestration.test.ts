@@ -258,3 +258,98 @@ test("Verification settleの書き込みに失敗した場合、③④は実行�
     assert.ok(JSON.parse(state)[STRATEGY_A_ID].lastRunDate === DATE);
   });
 });
+
+// ============================================================================
+// 本稼働前の最終安全監査：API側の時間帯fail-safe（二重防御）
+// ============================================================================
+
+test("16:35より前はPaper Trading runを開始せずskipReasonを記録する", async () => {
+  await withIsolatedDirs(async () => {
+    await captureSignalSnapshot({ cachedScan: fakeCachedScan(DATE, []), strategyVersion: "v1", now: new Date(`${DATE}T08:33:00+09:00`) });
+
+    const { runEveningOrchestration } = await import("../eveningOrchestration");
+    const result = await runEveningOrchestration({
+      date: DATE,
+      now: new Date(`${DATE}T16:30:00+09:00`), // 16:35の5分前
+      barProvider: makeBarProvider({}),
+      benchmarkBarProvider: makeBarProvider({}),
+      closesProvider: async () => [],
+    });
+
+    assert.equal(result.record.skipReason, "before_settle_window");
+    assert.equal(result.record.successStep, null);
+    assert.equal(result.record.failedStep, null);
+    assert.equal(result.record.paperTradingCompletedAt, null, "①Paper Trading runは開始されていない");
+
+    // Paper Trading本体には一切書き込まれていない（lastRunDateが今日になっていない）
+    const { getPortfolioState } = await import("@/app/lib/paperTrading/portfolioManager");
+    const state = await getPortfolioState(STRATEGY_A_ID, 500_000);
+    assert.notEqual(state.lastRunDate, DATE);
+  });
+});
+
+test("16:35ちょうど以降はPaper Trading runの開始を許可する", async () => {
+  await withIsolatedDirs(async () => {
+    await captureSignalSnapshot({ cachedScan: fakeCachedScan(DATE, []), strategyVersion: "v1", now: new Date(`${DATE}T08:33:00+09:00`) });
+
+    const { runEveningOrchestration } = await import("../eveningOrchestration");
+    const result = await runEveningOrchestration({
+      date: DATE,
+      now: new Date(`${DATE}T16:35:00+09:00`),
+      barProvider: makeBarProvider({ "^N225": { open: 39000, high: 39200, low: 38900, close: 39100 } }),
+      benchmarkBarProvider: makeBarProvider({ "^N225": { open: 39000, high: 39200, low: 38900, close: 39100 } }),
+      closesProvider: async () => [],
+    });
+
+    assert.equal(result.record.skipReason, null);
+    assert.ok(result.record.paperTradingCompletedAt, "16:35ちょうどで①が実行される");
+  });
+});
+
+test("土曜日（非営業日）は夕方処理も一切実行しない", async () => {
+  await withIsolatedDirs(async () => {
+    const { runEveningOrchestration } = await import("../eveningOrchestration");
+    const result = await runEveningOrchestration({
+      date: "2026-08-22",
+      now: new Date("2026-08-22T17:00:00+09:00"), // 2026-08-22は土曜日、時刻は16:35より後
+      barProvider: makeBarProvider({}),
+      benchmarkBarProvider: makeBarProvider({}),
+      closesProvider: async () => [],
+    });
+
+    assert.equal(result.record.skipReason, "not_a_trading_day");
+    assert.equal(result.record.paperTradingCompletedAt, null);
+  });
+});
+
+test("途中失敗後のretryは安全（Challenge書き込み失敗→復旧→再実行しても二重約定・cash不整合が起きない）", async () => {
+  // このシナリオはテストケース7〜11の既存テストで既に詳しく検証済みだが、ここでは
+  // 「retrySafe:trueを信じて何度も再実行しても問題ない」ことを、同一シナリオを3回連続で
+  // runEveningOrchestration()に投げる形であらためて確認する。
+  await withIsolatedDirs(async () => {
+    const cand = candidate("7203", "トヨタ自動車", 85, 3000, 2920, 3300);
+    await captureSignalSnapshot({ cachedScan: fakeCachedScan(DATE, [cand]), strategyVersion: "v1", now: new Date(`${DATE}T08:33:00+09:00`) });
+    const barProvider = makeBarProvider({
+      "7203": { open: 3000, high: 3350, low: 2990, close: 3300 },
+      "^N225": { open: 39000, high: 39200, low: 38900, close: 39100 },
+    });
+
+    const { runEveningOrchestration } = await import("../eveningOrchestration");
+    for (let i = 0; i < 3; i++) {
+      const result = await runEveningOrchestration({
+        date: DATE,
+        now: new Date(`${DATE}T16:3${5 + i}:00+09:00`),
+        barProvider,
+        benchmarkBarProvider: barProvider,
+        closesProvider: async () => [],
+      });
+      assert.equal(result.record.successStep, "milestones");
+      assert.equal(result.record.failedStep, null);
+    }
+
+    const trades = await getTrades(STRATEGY_A_ID);
+    assert.equal(trades.length, 1, "3回連続で呼んでも取引は1件のまま（二重約定しない）");
+    const { readDailyRecords } = await import("../store");
+    assert.equal((await readDailyRecords()).length, 1, "Daily Recordも1件のまま");
+  });
+});

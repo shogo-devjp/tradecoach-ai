@@ -1,4 +1,11 @@
 #!/bin/bash
+# 【本稼働前の最終安全監査で SUPERSEDED（旧スクリプト）に指定】
+# 夕方の本稼働時にLaunchAgent登録するのは run-challenge-evening-orchestration.sh のみとする
+# （POST /api/v1/challenge/evening-orchestrate が内部でこのスクリプトと同じ
+# POST /api/v1/paper-trading/run を①として呼ぶため、両方を登録すると同じ処理が重複起動しうる）。
+# このスクリプト自体は削除せず残す（Paper Trading runだけを手動で個別実行したい場合の
+# デバッグ用途に使える。runDaily()自体が同一日の二重実行を防ぐため、単体で叩いても安全）。
+#
 # Paper Trading（Phase 1）夕処理。当日の日足Open/High/Low/Closeが確定した後（既存の
 # evening-settle.shと同じ16:00〜23:59 JST安全窓）に起動し、POST /api/v1/paper-trading/run を
 # 1回叩いて約定・EXITを確定させる。

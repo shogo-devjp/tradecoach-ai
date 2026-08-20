@@ -341,6 +341,82 @@ test("すべてのポジションでjudgmentAt < plannedFillAt <= processedAtが
   });
 });
 
+// ============================================================================
+// 本稼働前の最終安全監査：runDaily()の部分書き込みリスクに対するfail-safe
+// ============================================================================
+
+// 「positions/trades/portfolio-historyは書き込み済みだがportfolio-state.jsonのlastRunDateは
+// まだ更新されていない」という中断状態を人為的に再現し、黙って再実行してcashが壊れることを
+// 防ぐ新設のfail-safeが機能することを確認する。
+test("当日分のPortfolioSnapshotは存在するがlastRunDateが未更新（中断の痕跡）の場合、黙って再実行せず例外を投げる", async () => {
+  await withTempDataDir(async () => {
+    await captureSignalSnapshot({ cachedScan: fakeCachedScan(DATE, []), strategyVersion: "v1", now: new Date(`${DATE}T08:33:00+09:00`) });
+
+    const { appendPortfolioSnapshot } = await import("../portfolioManager");
+    await appendPortfolioSnapshot({
+      strategyId: STRATEGY_A_ID,
+      date: DATE,
+      cash: 500_000,
+      positionsValue: 0,
+      totalAssets: 500_000,
+      unrealizedPnl: 0,
+      realizedPnlToday: 0,
+      cumulativeRealizedPnl: 0,
+      cumulativeReturnPercent: 0,
+      benchmarkValue: 500_000,
+      benchmarkReturnPercent: 0,
+      drawdownPercent: 0,
+      openPositionCount: 0,
+      newBuyHalted: false,
+    });
+    // 意図的にportfolio-state.jsonのlastRunDateは更新しない（中断状態を模す）。
+
+    const barProvider = makeBarProvider({ "^N225": { open: 39000, high: 39200, low: 38900, close: 39100 } });
+    await assert.rejects(
+      runDaily({ strategyId: STRATEGY_A_ID, date: DATE, barProvider, benchmarkBarProvider: barProvider, now: new Date(`${DATE}T16:35:00+09:00`) }),
+      /前回の実行が書き込み処理の途中で中断された可能性/,
+      "サイレントな再実行・cash不整合を防ぎ、明確な例外で停止する"
+    );
+  });
+});
+
+test("dryRun:trueの場合は中断検知fail-safeの対象外（読み取り専用のため安全）", async () => {
+  await withTempDataDir(async () => {
+    await captureSignalSnapshot({ cachedScan: fakeCachedScan(DATE, []), strategyVersion: "v1", now: new Date(`${DATE}T08:33:00+09:00`) });
+    const { appendPortfolioSnapshot } = await import("../portfolioManager");
+    await appendPortfolioSnapshot({
+      strategyId: STRATEGY_A_ID, date: DATE, cash: 500_000, positionsValue: 0, totalAssets: 500_000,
+      unrealizedPnl: 0, realizedPnlToday: 0, cumulativeRealizedPnl: 0, cumulativeReturnPercent: 0,
+      benchmarkValue: 500_000, benchmarkReturnPercent: 0, drawdownPercent: 0, openPositionCount: 0, newBuyHalted: false,
+    });
+
+    const barProvider = makeBarProvider({ "^N225": { open: 39000, high: 39200, low: 38900, close: 39100 } });
+    const result = await runDaily({ strategyId: STRATEGY_A_ID, date: DATE, dryRun: true, barProvider, benchmarkBarProvider: barProvider, now: new Date(`${DATE}T16:35:00+09:00`) });
+    assert.equal(result.skipped, false, "dryRunは中断検知の例外を投げずに計算だけ行う（何も書き込まない）");
+  });
+});
+
+// appendTrade()のid上書き（upsert）が、正常系では常に新規追加として振る舞うことを確認する
+// （安全監査で追加した変更が既存の正常な複数取引の記録を壊さないことの確認）。
+test("appendTrade()は異なるidの取引を複数追加でき、同一idの再呼び出しは上書きになる（重複しない）", async () => {
+  await withTempDataDir(async () => {
+    const { appendTrade, getTrades } = await import("../portfolioManager");
+    const baseTrade = {
+      strategyId: STRATEGY_A_ID, code: "7203", name: "トヨタ自動車", shares: 100,
+      entryFillPrice: 3000, exitFillPrice: 3100, entryAt: `${DATE}T09:00:00+09:00`, exitAt: `${DATE}T16:35:00+09:00`,
+      holdingDays: 0, exitReason: "take_profit" as const, realizedPnl: 10_000, realizedPnlPercent: 3.3, commissionTotal: 0,
+    };
+    await appendTrade({ ...baseTrade, id: "trade-a" });
+    await appendTrade({ ...baseTrade, id: "trade-b", code: "6758" });
+    assert.equal((await getTrades(STRATEGY_A_ID)).length, 2, "異なるidは両方とも追加される");
+
+    // 同一idを再度書き込む（中断→retryのシナリオを模す）。内容が同じでも件数は増えない。
+    await appendTrade({ ...baseTrade, id: "trade-a" });
+    const trades = await getTrades(STRATEGY_A_ID);
+    assert.equal(trades.length, 2, "同一idの再書き込みは上書きになり、件数が増えない");
+  });
+});
+
 // テストケース18（部分）: Paper Tradingのデータ保存先がverificationとは完全に分離されている
 test("Paper Tradingのデータ保存先はverification/data/log.jsonとは異なるディレクトリである", async () => {
   await withTempDataDir(async () => {

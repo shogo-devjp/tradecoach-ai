@@ -3,6 +3,11 @@ import path from "node:path";
 
 export type EveningOrchestrationStep = "paper_trading_run" | "verification_settle" | "challenge_daily_record" | "milestones";
 
+// 時間帯・非営業日ガードによって「そもそも何も試みなかった」ことを表す理由。
+// failedStep（何かを試みて失敗した）とは意味が異なるため、別フィールドで区別する
+// （運用上、監視やアラートの扱いを分けられるようにするため）。
+export type EveningSkipReason = "not_a_trading_day" | "before_settle_window";
+
 export interface EveningOrchestrationRecord {
   processedDate: string;
   paperTradingCompletedAt: string | null;
@@ -13,6 +18,8 @@ export interface EveningOrchestrationRecord {
   successStep: EveningOrchestrationStep | null;
   failedStep: EveningOrchestrationStep | null;
   errorReason: string | null;
+  // 時間帯・非営業日ガードにより何も実行しなかった場合のみ設定される（それ以外はnull）。
+  skipReason: EveningSkipReason | null;
   // 再実行して安全か。本オーケストレーションの各段（runDaily・settle・
   // buildAndSaveDailyRecord・detectAndRecordMilestones）はいずれも同一日の再実行に対して
   // 冪等（二重約定・二重レコード・二重イベントを作らない）であることがテストで確認されているため、

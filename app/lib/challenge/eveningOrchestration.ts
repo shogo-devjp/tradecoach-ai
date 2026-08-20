@@ -2,17 +2,24 @@ import { runDaily, type DailyBarProvider } from "@/app/lib/paperTrading/engine";
 import { yahooBarProvider } from "@/app/lib/paperTrading/yahooBarProvider";
 import { STRATEGY_A_ID } from "@/app/lib/paperTrading/config";
 import { settlePendingUniverseVerificationRecords, type FutureClosesProvider } from "@/app/lib/universeVerification/settle";
+import { isTradingDayJst, jstDateKey, jstHHMM } from "@/app/lib/marketCalendar";
 import { generateDailyRecordAndMilestones } from "./dailyOrchestration";
 import { upsertEveningOrchestrationRecord } from "./eveningOrchestrationStore";
 import type { EveningOrchestrationRecord, EveningOrchestrationStep } from "./eveningOrchestrationStore";
 
 function todayKeyJst(now: Date): string {
-  return now.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  return jstDateKey(now);
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+// 当日の日足OHLCが確定したとみなせる安全な時刻（JST）。これより前はPaper Trading runを
+// 開始しない（既存run-paper-trading.sh/run-evening-settle.shの16:00より厳しい、
+// このAPI自体が持つ独立したガード。既存シェルスクリプト側の安全窓とは別に、
+// API単体が呼ばれても同じ基準で拒否できるようにするための二重防御）。
+const EVENING_SETTLE_DEADLINE_HHMM = "16:35";
 
 export interface RunEveningOrchestrationInput {
   date?: string;
@@ -59,6 +66,29 @@ export async function runEveningOrchestration(input: RunEveningOrchestrationInpu
   let successStep: EveningOrchestrationStep | null = null;
   let failedStep: EveningOrchestrationStep | null = null;
   let errorReason: string | null = null;
+
+  // --- API側の時間帯fail-safe（二重防御。既存シェルスクリプトの安全窓とは独立した「呼び出しの
+  //     入口」でのガード）。テストはnowを明示的に注入して時刻を制御する（本番と全く同じこの
+  //     関数・同じ判定を通す。「テスト時だけ無条件通過する」ような分岐は存在しない）。
+  //     ①非営業日（土日・年末年始・祝日）はPaper Trading runを開始しない。
+  //     ②16:35 JSTより前はPaper Trading runを開始しない（当日の日足がまだ確定していない
+  //       可能性が高いため）。
+  const skipReason = !isTradingDayJst(now) ? "not_a_trading_day" : jstHHMM(now) < EVENING_SETTLE_DEADLINE_HHMM ? "before_settle_window" : null;
+
+  if (skipReason) {
+    const record = await upsertEveningOrchestrationRecord(date, {
+      paperTradingCompletedAt: null,
+      verificationSettledAt: null,
+      dailyRecordGeneratedAt: null,
+      milestonesProcessedAt: null,
+      successStep: null,
+      failedStep: null,
+      errorReason: null,
+      skipReason,
+      retrySafe: true,
+    });
+    return { record };
+  }
 
   // --- ① Paper Trading run（既存engine.tsをそのまま呼ぶ。判断・約定ロジックには一切手を加えない） ---
   try {
@@ -121,6 +151,7 @@ export async function runEveningOrchestration(input: RunEveningOrchestrationInpu
     successStep,
     failedStep,
     errorReason,
+    skipReason: null,
     // 各段は同一日の再実行に対して冪等（テストで確認済み）なため、失敗内容によらず再実行してよい。
     retrySafe: true,
   });

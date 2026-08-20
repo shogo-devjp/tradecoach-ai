@@ -153,3 +153,54 @@ test("同一日に再実行してもSnapshot・Verificationとも二重生成さ
     assert.equal(uvLog.length, 2, "レコード総数は増えない");
   });
 });
+
+// ============================================================================
+// 本稼働前の最終安全監査：API側の時間帯fail-safe（二重防御）
+// ============================================================================
+
+test("8:30台（市場開始前）はSnapshot固定・Verification初期化とも正常に許可される", async () => {
+  await withTempDirs(async () => {
+    const at0830 = new Date("2026-08-20T08:30:30+09:00");
+    const result = await runMorningOrchestration({ now: at0830, cachedScan: fakeCachedScan(FIXED_DATE) });
+    assert.equal(result.snapshot.captured, true);
+    assert.equal(result.verification!.initialized, true);
+  });
+});
+
+test("9:00 JSTちょうど以降は新規Snapshot固定をAPI側の入口で拒否する（内部の既存fail-safeより手前で弾く）", async () => {
+  await withTempDirs(async () => {
+    const at0900 = new Date("2026-08-20T09:00:00+09:00");
+    const result = await runMorningOrchestration({ now: at0900, cachedScan: fakeCachedScan(FIXED_DATE) });
+    assert.equal(result.snapshot.captured, false);
+    assert.equal(result.snapshot.reason, "after_market_open", "既存の内部fail-safeと同じreason文字列で整合させる");
+    assert.equal(result.verification, null);
+
+    // API側ガードで弾かれたため、captureSignalSnapshot自体が一切呼ばれていない
+    // （snapshot-snapshots.jsonへも書き込まれていない）ことをキャプチャ結果の非存在で確認する。
+    const { getSnapshotCaptureResult } = await import("@/app/lib/paperTrading/signalSnapshotStore");
+    const captureResult = await getSnapshotCaptureResult(FIXED_DATE);
+    assert.equal(captureResult, null, "API側ガードで早期リターンしたため、Snapshot捕捉結果自体が記録されない");
+  });
+});
+
+test("土曜日（非営業日）はSnapshot固定・Verification初期化とも試みない", async () => {
+  await withTempDirs(async () => {
+    const saturday = new Date("2026-08-22T08:35:00+09:00"); // 2026-08-22は土曜日
+    const result = await runMorningOrchestration({ now: saturday, cachedScan: fakeCachedScan("2026-08-22") });
+    assert.equal(result.snapshot.captured, false);
+    assert.equal(result.snapshot.reason, "not_a_trading_day");
+    assert.equal(result.verification, null);
+
+    const record = await getMorningOrchestrationRecord("2026-08-22");
+    assert.equal(record!.snapshotSkipReason, "not_a_trading_day");
+  });
+});
+
+test("日曜日（非営業日）も同様にSnapshot固定を試みない", async () => {
+  await withTempDirs(async () => {
+    const sunday = new Date("2026-08-23T08:35:00+09:00"); // 2026-08-23は日曜日
+    const result = await runMorningOrchestration({ now: sunday, cachedScan: fakeCachedScan("2026-08-23") });
+    assert.equal(result.snapshot.captured, false);
+    assert.equal(result.snapshot.reason, "not_a_trading_day");
+  });
+});

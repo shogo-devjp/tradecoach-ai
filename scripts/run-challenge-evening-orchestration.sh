@@ -50,8 +50,12 @@ if [ -f "$DONE_MARKER" ]; then
   exit 0
 fi
 
-if [ "$CURRENT_HHMM" -lt "1600" ]; then
-  echo "[$(timestamp)] Outside evening window (16:00-23:59 JST, now ${CURRENT_HHMM}). Skip." >> "$LOG_FILE"
+# 本稼働前の最終安全監査でAPI側にも同じ16:35 JST締切のガードを追加した（二重防御）ため、
+# スクリプト側の安全窓もそれに合わせて16:35に統一する（API単体を誤って早く呼んでも
+# skipReason:"before_settle_window"で安全に何もしないが、スクリプト側でも早期リターンして
+# 無駄なAPI呼び出し・ログ出力を避ける）。
+if [ "$CURRENT_HHMM" -lt "1635" ]; then
+  echo "[$(timestamp)] Outside evening window (16:35-23:59 JST, now ${CURRENT_HHMM}). Skip." >> "$LOG_FILE"
   exit 0
 fi
 
@@ -79,7 +83,7 @@ summary=$(node -e '
   try {
     const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
     const r = d.record;
-    console.log(`successStep=${r.successStep} failedStep=${r.failedStep} errorReason=${r.errorReason ?? "-"} paperTradingCompletedAt=${r.paperTradingCompletedAt ?? "-"} verificationSettledAt=${r.verificationSettledAt ?? "-"} dailyRecordGeneratedAt=${r.dailyRecordGeneratedAt ?? "-"} milestonesProcessedAt=${r.milestonesProcessedAt ?? "-"}`);
+    console.log(`successStep=${r.successStep} failedStep=${r.failedStep} skipReason=${r.skipReason ?? "-"} errorReason=${r.errorReason ?? "-"} paperTradingCompletedAt=${r.paperTradingCompletedAt ?? "-"} verificationSettledAt=${r.verificationSettledAt ?? "-"} dailyRecordGeneratedAt=${r.dailyRecordGeneratedAt ?? "-"} milestonesProcessedAt=${r.milestonesProcessedAt ?? "-"}`);
   } catch { console.log("(レスポンス解析失敗)"); }
 ' "$RESPONSE_FILE" 2>/dev/null)
 
@@ -90,6 +94,22 @@ success=$(node -e '
     console.log(d.record && d.record.successStep === "milestones" ? "true" : "false");
   } catch { console.log("false"); }
 ' "$RESPONSE_FILE" 2>/dev/null)
+
+skipped=$(node -e '
+  const fs = require("fs");
+  try {
+    const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
+    console.log(d.record && d.record.skipReason ? "true" : "false");
+  } catch { console.log("false"); }
+' "$RESPONSE_FILE" 2>/dev/null)
+
+if [ "$skipped" = "true" ]; then
+  # API側のガード（非営業日・16:35より前）で何も実行しなかった場合。スクリプト自身の事前
+  # チェックと同じ理由のはずだが、念のためAPI側でも弾かれたことをログに残すだけで
+  # エラー扱いにはしない（完了マーカーも作らず、次回のキャッチアップ起動に委ねる）。
+  echo "[$(timestamp)] SKIPPED (API guard): $summary" >> "$LOG_FILE"
+  exit 0
+fi
 
 if [ "$success" = "true" ]; then
   echo "[$(timestamp)] SUCCESS: $summary" >> "$LOG_FILE"

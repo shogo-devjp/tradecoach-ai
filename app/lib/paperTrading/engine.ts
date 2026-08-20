@@ -13,6 +13,7 @@ import {
   buildOpenPosition,
   closePositionWith,
   getOpenPositions,
+  getPortfolioHistory,
   getPortfolioState,
   positionExistsForToday,
   savePortfolioState,
@@ -142,6 +143,29 @@ export async function runDaily(input: RunDailyInput): Promise<RunDailyResult> {
   // --- 冪等性: 同一dateに対して既にrun済みなら何もしない（同一runの二重実行でも二重約定させない） ---
   if (portfolioStateBefore.lastRunDate === date) {
     return { date, skipped: true, skipReason: "already_run_today", exitedPositionIds: [], newlyOpenedPositionIds: [], rejectedEntries: [] };
+  }
+
+  // --- 本稼働前の最終安全監査で追加したfail-safe ---
+  // 冪等性チェック（lastRunDate）はportfolio-state.jsonの保存（このrunの最後に行われる）でしか
+  // 更新されない。もしプロセスが「positions/trades/portfolio-history等は書き込み済みだが
+  // portfolio-state.jsonの保存だけがまだ」という区間で異常終了した場合、lastRunDateは前回のままの
+  // ため上のチェックをすり抜けてしまい、この関数は「今日はまだ未実行」と誤認して丸ごと再実行してしまう。
+  // 再実行時のcashはportfolioStateBefore.cash（＝中断前の古い値）から計算し直されるため、
+  // 既にpositions/trades側へ反映済みの当日の資金移動が二重に計算されない一方、
+  // 古いcashのままportfolio-state.jsonが確定してしまい、cashとpositions/tradesの間で
+  // サイレントな不整合が生じるおそれがある。
+  // これを「気づかれないまま」にしないよう、同じ兆候（当日分のPortfolioSnapshotは既に存在するのに
+  // lastRunDateが今日になっていない）を検知した場合は、黙って再実行せず例外で停止する
+  // （運用者が手動でデータを確認できるようにするための最小限のfail-safe。
+  // 自動修復・transaction機構の導入はスコープ外として別途判断する）。
+  if (!dryRun) {
+    const history = await getPortfolioHistory(input.strategyId);
+    if (history.some((s) => s.date === date)) {
+      throw new Error(
+        `runDaily: ${date}分のPortfolioSnapshotは既に存在しますが、portfolio-state.jsonのlastRunDateが更新されていません。` +
+          "前回の実行が書き込み処理の途中で中断された可能性があります。cashとpositions/tradesの整合性を手動で確認してから再実行してください。"
+      );
+    }
   }
 
   let cash = portfolioStateBefore.cash;

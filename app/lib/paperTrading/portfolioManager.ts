@@ -83,10 +83,19 @@ export async function getTrades(strategyId: string): Promise<PaperTrade[]> {
   return all.filter((t) => t.strategyId === strategyId);
 }
 
+// 本稼働前の最終安全監査で追加：trade.id（`${positionId}-trade`）はstrategyId+code+dateの
+// 組み合わせごとに一意（同一日同一銘柄のポジションは1つしか開けないため）。単純追記ではなく
+// idベースのupsertにすることで、runDaily()がpositions/tradesの書き込み完了後・
+// portfolio-state.json保存前に中断し、再実行が同一ポジションのEXITを再度処理してしまった場合でも
+// trades.jsonへ二重に記録されない（既存のsavePosition()と同じ「idがあれば置換、無ければ追加」
+// パターンに統一した）。通常運用（同一ポジションが複数回EXIT処理されることはない）では
+// 常に新規追加のみが起こり、挙動は変わらない。
 export async function appendTrade(trade: PaperTrade): Promise<void> {
   await enqueue(TRADES_FILE, async () => {
     const all = await readJson<PaperTrade[]>(TRADES_FILE, []);
-    all.push(trade);
+    const idx = all.findIndex((t) => t.id === trade.id);
+    if (idx >= 0) all[idx] = trade;
+    else all.push(trade);
     await writeJson(TRADES_FILE, all);
   });
 }

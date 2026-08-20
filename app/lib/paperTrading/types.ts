@@ -44,7 +44,8 @@ export type SnapshotSkipReason =
   | "cache_unavailable" // getCachedScan()が当日分を返さなかった（サーバー再起動等）
   | "incomplete_scan" // 対象銘柄数に対して結果件数が不足している
   | "too_many_failures" // 失敗件数が許容閾値を超えている
-  | "after_market_open"; // 9:00 JSTを過ぎてしまった
+  | "after_market_open" // 9:00 JSTを過ぎてしまった
+  | "not_a_trading_day"; // 土日・年末年始・祝日等の非営業日（morningOrchestration.tsのAPI側ガード）
 
 export interface SnapshotCaptureResult {
   date: string;

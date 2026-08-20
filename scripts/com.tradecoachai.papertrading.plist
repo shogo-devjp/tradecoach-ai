@@ -24,8 +24,10 @@
     <key>RunAtLoad</key>
     <true/>
 
-    <!-- 【重要】このplistはテンプレートであり、まだ ~/Library/LaunchAgents/ には登録していない
-         （Phase 1はdry-run・テストのみで、自動運用の本稼働はまだ開始しない）。 -->
+    <!-- 【重要・SUPERSEDED】このplistは登録しないこと。本稼働時の夕方の入口は
+         com.tradecoachai.challengeevening（run-challenge-evening-orchestration.sh）に
+         一本化した。こちらを併せて登録すると同じPaper Trading run処理が重複起動しうる。
+         このテンプレート自体は削除せず、単体デバッグ用の参考として残している。 -->
 
     <key>StandardOutPath</key>
     <string>/Users/okashogo/Developer/tradecoach-ai/logs/launchd-paper-trading-stdout.log</string>
