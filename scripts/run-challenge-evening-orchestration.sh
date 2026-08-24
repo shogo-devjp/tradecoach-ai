@@ -18,7 +18,9 @@ LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/challenge-evening-orchestration.log"
 STATE_DIR="$PROJECT_DIR/logs/state"
 API_URL="http://localhost:3000/api/v1/challenge/evening-orchestrate"
+NOTIFY_API_URL="http://localhost:3000/api/v1/challenge/notify-daily-result"
 RESPONSE_FILE="$(mktemp /tmp/tradecoach-challenge-evening-XXXXXX.json)"
+NOTIFY_RESPONSE_FILE="$(mktemp /tmp/tradecoach-challenge-notify-XXXXXX.json)"
 
 source "$PROJECT_DIR/scripts/lib/wait-for-webserver.sh"
 
@@ -29,9 +31,41 @@ timestamp() {
 }
 
 cleanup() {
-  rm -f "$RESPONSE_FILE"
+  rm -f "$RESPONSE_FILE" "$NOTIFY_RESPONSE_FILE"
 }
 trap cleanup EXIT
+
+# 「運用処理」（evening-orchestrate）とは完全に別のAPI呼び出しとしてLINE通知を行う。
+# 通知の成否（curl失敗・HTTP非200・send_failed等）はこのスクリプトの終了コード・完了マーカーには
+# 一切影響させない（通知はログに記録するだけで、evening-orchestrate自体の成否判定より後、
+# かつその判定結果に関わらず必ず1回だけ試みる。非営業日等でevening-orchestrate自体をスキップ
+# した場合は、この関数を呼ばない＝通知しない）。
+notify_daily_result() {
+  local notify_http_code
+  notify_http_code=$(curl -s -o "$NOTIFY_RESPONSE_FILE" -w "%{http_code}" --max-time 60 -X POST "$NOTIFY_API_URL")
+  local notify_curl_exit=$?
+
+  if [ $notify_curl_exit -ne 0 ]; then
+    echo "[$(timestamp)] NOTIFY WARN: notify-daily-result APIのcurlが失敗しました（exit code $notify_curl_exit）。Paper Trading確定データへの影響はありません。" >> "$LOG_FILE"
+    return
+  fi
+  if [ "$notify_http_code" != "200" ]; then
+    local notify_body
+    notify_body=$(head -c 300 "$NOTIFY_RESPONSE_FILE" 2>/dev/null)
+    echo "[$(timestamp)] NOTIFY WARN (HTTP $notify_http_code): $notify_body" >> "$LOG_FILE"
+    return
+  fi
+
+  local notify_summary
+  notify_summary=$(node -e '
+    const fs = require("fs");
+    try {
+      const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
+      console.log(`outcome=${d.outcome} detail=${d.detail ?? "-"}`);
+    } catch { console.log("(レスポンス解析失敗)"); }
+  ' "$NOTIFY_RESPONSE_FILE" 2>/dev/null)
+  echo "[$(timestamp)] NOTIFY: $notify_summary" >> "$LOG_FILE"
+}
 
 TODAY_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
 DONE_MARKER="$STATE_DIR/challenge-evening-done-$TODAY_JST"
@@ -114,9 +148,11 @@ fi
 if [ "$success" = "true" ]; then
   echo "[$(timestamp)] SUCCESS: $summary" >> "$LOG_FILE"
   touch "$DONE_MARKER"
+  notify_daily_result
   exit 0
 fi
 
 echo "[$(timestamp)] PARTIAL/FAILED: $summary" >> "$LOG_FILE"
 echo "[$(timestamp)] 完了マーカーは作成しません。次回のキャッチアップ起動で自動的に再試行されます（各段は冪等）。" >> "$LOG_FILE"
+notify_daily_result
 exit 1
