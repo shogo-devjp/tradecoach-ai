@@ -43,5 +43,8 @@ next-env.d.ts
 # verification mode (個人利用のローカルログ、コミット不要)
 /app/lib/verification/data/
 
+# FX版 Paper Trading（個人利用のローカルログ・仮想運用データ、コミット不要）
+/app/lib/fx/paperTrading/data/
+
 # 毎朝8:30 LaunchAgentの実行ログ（個人利用のローカルログ、コミット不要）
 /logs/*.log
