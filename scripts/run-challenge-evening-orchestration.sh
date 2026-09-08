@@ -40,31 +40,74 @@ trap cleanup EXIT
 # 一切影響させない（通知はログに記録するだけで、evening-orchestrate自体の成否判定より後、
 # かつその判定結果に関わらず必ず1回だけ試みる。非営業日等でevening-orchestrate自体をスキップ
 # した場合は、この関数を呼ばない＝通知しない）。
+#
+# v1.9: evening-orchestrateのcurl自体がタイムアウト等で失敗しても（Macの再スリープでクライアント
+# 側が先にタイムアウトし、サーバー側は数秒〜数十秒後に処理を完了しているケースが2026-09-07に
+# 実際に発生した）、notify-daily-resultだけを短時間ポーリングして後から結果通知を回収できるようにする。
+# notify-daily-resultはEveningOrchestrationRecordを読むだけの読み取り専用API（Paper Trading・
+# verificationには一切書き込まない）なので、何度呼んでも実害はない。また実際の送信可否は
+# notifyOnceToday()のkind別永続マーカーで冪等化されているため、ポーリングで複数回叩いても
+# LINEは当日最大1通（結果通知）・1通（エラー通知）に保たれる。
+# Paper Trading本体（evening-orchestrate）はここでは再実行しない。
+NOTIFY_POLL_INTERVAL_SEC=20
+NOTIFY_POLL_MAX_ATTEMPTS=6 # 20秒 x 6回 = 最大約2分
+
 notify_daily_result() {
+  local attempt
   local notify_http_code
-  notify_http_code=$(curl -s -o "$NOTIFY_RESPONSE_FILE" -w "%{http_code}" --max-time 60 -X POST "$NOTIFY_API_URL")
-  local notify_curl_exit=$?
+  local notify_curl_exit
+  local outcome
 
-  if [ $notify_curl_exit -ne 0 ]; then
-    echo "[$(timestamp)] NOTIFY WARN: notify-daily-result APIのcurlが失敗しました（exit code $notify_curl_exit）。Paper Trading確定データへの影響はありません。" >> "$LOG_FILE"
-    return
-  fi
-  if [ "$notify_http_code" != "200" ]; then
-    local notify_body
-    notify_body=$(head -c 300 "$NOTIFY_RESPONSE_FILE" 2>/dev/null)
-    echo "[$(timestamp)] NOTIFY WARN (HTTP $notify_http_code): $notify_body" >> "$LOG_FILE"
-    return
-  fi
+  for attempt in $(seq 1 "$NOTIFY_POLL_MAX_ATTEMPTS"); do
+    notify_http_code=$(curl -s -o "$NOTIFY_RESPONSE_FILE" -w "%{http_code}" --max-time 60 -X POST "$NOTIFY_API_URL")
+    notify_curl_exit=$?
 
-  local notify_summary
-  notify_summary=$(node -e '
-    const fs = require("fs");
-    try {
-      const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
-      console.log(`outcome=${d.outcome} detail=${d.detail ?? "-"}`);
-    } catch { console.log("(レスポンス解析失敗)"); }
-  ' "$NOTIFY_RESPONSE_FILE" 2>/dev/null)
-  echo "[$(timestamp)] NOTIFY: $notify_summary" >> "$LOG_FILE"
+    if [ $notify_curl_exit -ne 0 ]; then
+      echo "[$(timestamp)] NOTIFY WARN: notify-daily-result APIのcurlが失敗しました（exit code $notify_curl_exit, attempt ${attempt}/${NOTIFY_POLL_MAX_ATTEMPTS}）。Paper Trading確定データへの影響はありません。" >> "$LOG_FILE"
+    elif [ "$notify_http_code" != "200" ]; then
+      local notify_body
+      notify_body=$(head -c 300 "$NOTIFY_RESPONSE_FILE" 2>/dev/null)
+      echo "[$(timestamp)] NOTIFY WARN (HTTP $notify_http_code, attempt ${attempt}/${NOTIFY_POLL_MAX_ATTEMPTS}): $notify_body" >> "$LOG_FILE"
+    else
+      outcome=$(node -e '
+        const fs = require("fs");
+        try {
+          const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
+          console.log(d.outcome ?? "");
+        } catch { console.log(""); }
+      ' "$NOTIFY_RESPONSE_FILE" 2>/dev/null)
+
+      local notify_summary
+      notify_summary=$(node -e '
+        const fs = require("fs");
+        try {
+          const d = JSON.parse(fs.readFileSync(process.argv[1], "utf-8"));
+          console.log(`outcome=${d.outcome} detail=${d.detail ?? "-"}`);
+        } catch { console.log("(レスポンス解析失敗)"); }
+      ' "$NOTIFY_RESPONSE_FILE" 2>/dev/null)
+
+      case "$outcome" in
+        sent_result|sent_error|already_notified)
+          echo "[$(timestamp)] NOTIFY: $notify_summary (attempt ${attempt}/${NOTIFY_POLL_MAX_ATTEMPTS})" >> "$LOG_FILE"
+          return
+          ;;
+        skipped_not_ready)
+          echo "[$(timestamp)] NOTIFY: $notify_summary (attempt ${attempt}/${NOTIFY_POLL_MAX_ATTEMPTS}, サーバー側の処理完了待ちのため再確認します)" >> "$LOG_FILE"
+          ;;
+        *)
+          # skipped_non_trading_day等、それ以上リトライしても状況が変わらない結果はここで確定して終わる。
+          echo "[$(timestamp)] NOTIFY: $notify_summary (attempt ${attempt}/${NOTIFY_POLL_MAX_ATTEMPTS})" >> "$LOG_FILE"
+          return
+          ;;
+      esac
+    fi
+
+    if [ "$attempt" -lt "$NOTIFY_POLL_MAX_ATTEMPTS" ]; then
+      sleep "$NOTIFY_POLL_INTERVAL_SEC"
+    fi
+  done
+
+  echo "[$(timestamp)] NOTIFY WARN: ${NOTIFY_POLL_MAX_ATTEMPTS}回のポーリングでも結果通知を確定できませんでした（サーバー側が未完了の可能性）。次回のキャッチアップ起動で自動的に再試行されます。" >> "$LOG_FILE"
 }
 
 TODAY_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
@@ -103,6 +146,12 @@ curl_exit=$?
 
 if [ $curl_exit -ne 0 ]; then
   echo "[$(timestamp)] ERROR: evening-orchestrate APIのcurlが失敗しました（exit code $curl_exit）。" >> "$LOG_FILE"
+  # v1.9: クライアント側のcurlが失敗しても、サーバー側では処理が継続・完了している可能性がある
+  # （Macの再スリープでクライアントが先にタイムアウトするケースが2026-09-07に実際発生した）。
+  # このスクリプトからevening-orchestrateを再実行することはせず、結果の確認だけをポーリングで試みる。
+  # 完了マーカー（$DONE_MARKER）はここでは作らない＝次回のキャッチアップ起動でevening-orchestrate
+  # 自体の再試行（冪等）にも委ねられる。
+  notify_daily_result
   exit 1
 fi
 

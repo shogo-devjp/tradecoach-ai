@@ -5,8 +5,13 @@
     <key>Label</key>
     <string>com.tradecoachai.challengeevening</string>
 
+    <!-- v1.9: caffeinate -i -s でスクリプトのプロセス生存期間だけシステムスリープを防止する。
+         処理終了と同時にアサーションは自動解放される。Paper Trading本体のロジックには無関係。 -->
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>-s</string>
         <string>/bin/bash</string>
         <string>-lc</string>
         <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-challenge-evening-orchestration.sh</string>

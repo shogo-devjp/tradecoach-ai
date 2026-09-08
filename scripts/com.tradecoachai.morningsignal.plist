@@ -5,8 +5,15 @@
     <key>Label</key>
     <string>com.tradecoachai.morningsignal</string>
 
+    <!-- v1.9: caffeinate -i -s でスクリプトのプロセス生存期間だけシステムスリープを防止する。
+         スクリプトが終了すればアサーションは自動解放され、通常の省電力状態に戻る。
+         Macがダークウェイク中にこのジョブが起動した場合でも、処理の途中で再スリープして
+         curlが中断される事故（2026-09-07に実際発生）を防ぐのが目的。判定ロジックには無関係。 -->
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>-s</string>
         <string>/bin/bash</string>
         <string>-lc</string>
         <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-morning-signal.sh</string>

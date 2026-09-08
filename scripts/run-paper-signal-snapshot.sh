@@ -38,6 +38,38 @@ cleanup() {
 }
 trap cleanup EXIT
 
+IRREGULAR_DAYS_FILE="$STATE_DIR/irregular-days.json"
+
+# v1.9: after_market_open fail-safe（9:00 JST締切超過で新規Snapshot/Verification未作成）が
+# 発生した日を「検証上のイレギュラー日」として記録する。既存のPaper Tradingデータ
+# （app/lib/paperTrading/data/*, app/lib/challenge/data/*）には一切書き込まない、
+# 完全に別ファイルの追記専用ログ。Day30等の最終検証時に、この日を「非稼働日」ではなく
+# 「Macスリープ等により捕捉できなかった日」として識別するためのメタデータ。
+record_irregular_day() {
+  local reason="$1"
+  local note="$2"
+  node -e '
+    const fs = require("fs");
+    const path = process.argv[1];
+    const date = process.argv[2];
+    const reason = process.argv[3];
+    const note = process.argv[4];
+    let entries = [];
+    try {
+      entries = JSON.parse(fs.readFileSync(path, "utf-8"));
+      if (!Array.isArray(entries)) entries = [];
+    } catch {
+      entries = [];
+    }
+    if (entries.some((e) => e && e.date === date && e.reason === reason)) {
+      process.exit(0); // 同日・同理由の記録が既にある場合は重複追記しない
+    }
+    entries.push({ date, reason, detectedAt: new Date().toISOString(), note });
+    fs.mkdirSync(require("path").dirname(path), { recursive: true });
+    fs.writeFileSync(path, JSON.stringify(entries, null, 2) + "\n", "utf-8");
+  ' "$IRREGULAR_DAYS_FILE" "$TODAY_JST" "$reason" "$note" 2>>"$LOG_FILE"
+}
+
 TODAY_JST="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
 SNAPSHOT_MARKER="$STATE_DIR/paper-snapshot-done-$TODAY_JST"
 CURRENT_HHMM="$(TZ=Asia/Tokyo date +%H%M)"
@@ -113,6 +145,7 @@ for attempt in $(seq 1 "$POLL_MAX_ATTEMPTS"); do
     ' "$RESPONSE_FILE" 2>/dev/null)
     if [ "$reason" = "after_market_open" ]; then
       echo "[$(timestamp)] STOP: 9:00 JSTを過ぎたためSnapshot/Verificationを作成しませんでした（fail-safe。当日は新規BUYなし・225件verificationも作成なし）: $summary" >> "$LOG_FILE"
+      record_irregular_day "paper_snapshot_after_market_open_failsafe" "9:00 JST締切超過によりSnapshot/Verification未作成（fail-safe）。$summary"
       touch "$SNAPSHOT_MARKER"
       exit 0
     fi

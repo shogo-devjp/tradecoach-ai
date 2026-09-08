@@ -5,8 +5,14 @@
     <key>Label</key>
     <string>com.tradecoachai.papersnapshot</string>
 
+    <!-- v1.9: caffeinate -i -s でスクリプトのプロセス生存期間だけシステムスリープを防止する。
+         9:00 JST締切に対して特にシビアなジョブのため、起床後に再スリープでポーリングが
+         中断されることを防ぐ（2026-09-07・2026-09-08に実際発生）。判定ロジックには無関係。 -->
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>-s</string>
         <string>/bin/bash</string>
         <string>-lc</string>
         <string>/Users/okashogo/Developer/tradecoach-ai/scripts/run-paper-signal-snapshot.sh</string>
